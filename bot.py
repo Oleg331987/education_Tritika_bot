@@ -1,12 +1,11 @@
 import os
 import logging
 import asyncio
-from typing import Optional
 from datetime import datetime
 
-# Импорты aiogram
+# Правильные импорты aiogram 3.x
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -758,4 +757,5 @@ async def main():
 
 # Точка входа
 if __name__ == "__main__":
+
     asyncio.run(main())
