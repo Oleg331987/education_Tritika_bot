@@ -3,9 +3,11 @@ import sys
 import logging
 import asyncio
 import signal
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import json
+import traceback
 
 # Импорты aiogram
 from aiogram import Bot, Dispatcher, types, F
@@ -23,7 +25,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('bot.log'),
+        logging.FileHandler('bot.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -32,11 +34,17 @@ logger = logging.getLogger(__name__)
 # Глобальные переменные для graceful shutdown
 bot_instance = None
 dp_instance = None
+shutdown_flag = False
+restart_count = 0
+max_restarts = 50  # Максимальное количество перезапусков
+restart_delay = 5  # Задержка между перезапусками в секундах
 
 # Обработчики сигналов для graceful shutdown
 def signal_handler(sig, frame):
     """Обработчик сигналов для graceful shutdown"""
-    logger.info(f"Received signal {sig}, initiating graceful shutdown...")
+    global shutdown_flag
+    logger.info(f"Получен сигнал {sig}, инициируется graceful shutdown...")
+    shutdown_flag = True
     
     if bot_instance and dp_instance:
         asyncio.create_task(shutdown())
@@ -45,23 +53,23 @@ def signal_handler(sig, frame):
 
 async def shutdown():
     """Корректное завершение работы бота"""
-    logger.info("Starting graceful shutdown...")
+    logger.info("Начинаем graceful shutdown...")
     
     try:
         # Останавливаем polling
         if dp_instance:
             await dp_instance.stop_polling()
-            logger.info("Polling stopped successfully")
+            logger.info("Polling успешно остановлен")
         
         # Закрываем сессию бота
         if bot_instance:
             await bot_instance.session.close()
-            logger.info("Bot session closed successfully")
+            logger.info("Сессия бота успешно закрыта")
             
     except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
+        logger.error(f"Ошибка при завершении: {e}")
     finally:
-        logger.info("Shutdown completed")
+        logger.info("Shutdown завершен")
         sys.exit(0)
 
 # Регистрация обработчиков сигналов
@@ -1806,7 +1814,7 @@ async def check_audio_files():
     """
     Проверяет наличие всех аудио файлов при запуске бота
     """
-    logger.info("Checking audio files...")
+    logger.info("Проверяем аудио файлы...")
     
     missing_files = []
     
@@ -1830,59 +1838,131 @@ async def check_audio_files():
     
     return len(missing_files) == 0
 
+# Функция для запуска бота с повторными попытками
+async def run_bot_with_retries():
+    """
+    Запускает бота с повторными попытками при сбоях
+    """
+    global bot_instance, dp_instance, shutdown_flag, restart_count
+    
+    bot_instance = bot
+    dp_instance = dp
+    
+    while not shutdown_flag and restart_count < max_restarts:
+        try:
+            logger.info(f"🚀 Запуск бота (попытка {restart_count + 1}/{max_restarts})...")
+            logger.info("Зарегистрированы обработчики SIGTERM и SIGINT для graceful shutdown")
+            logger.info(f"Система тестирования: {len(TEST_QUESTIONS)} вопросов готово")
+            logger.info(f"Быстрые действия: Отметить все модули и предпросмотр вопросов доступны")
+            
+            # Проверяем аудио файлы
+            await check_audio_files()
+            
+            # Проверяем токен и подключаемся к Telegram
+            try:
+                bot_info = await bot.get_me()
+                logger.info(f"✅ Бот запущен: @{bot_info.username} (ID: {bot_info.id})")
+                logger.info(f"✅ Фиксированные кнопки: 10 основных кнопок всегда видны")
+                logger.info(f"✅ Аудио сопровождение: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} уроков")
+                logger.info(f"✅ Система тестирования: {len(TEST_QUESTIONS)} вопросов доступно")
+            except Exception as e:
+                logger.error(f"❌ Не удалось подключиться к Telegram API: {e}")
+                logger.error("Проверьте ваш BOT_TOKEN и подключение к интернету")
+                restart_count += 1
+                if not shutdown_flag:
+                    logger.info(f"⏳ Повторная попытка через {restart_delay} секунд...")
+                    await asyncio.sleep(restart_delay)
+                continue
+            
+            # Запускаем поллинг с обработкой ошибок
+            try:
+                logger.info("🔄 Начинаем polling...")
+                await dp.start_polling(bot)
+            except asyncio.CancelledError:
+                logger.info("✅ Polling отменен (graceful shutdown)")
+                break
+            except Exception as e:
+                logger.error(f"❌ Ошибка polling: {e}")
+                logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
+                
+                restart_count += 1
+                if not shutdown_flag and restart_count < max_restarts:
+                    logger.info(f"🔄 Перезапуск через {restart_delay} секунд (попытка {restart_count}/{max_restarts})...")
+                    await asyncio.sleep(restart_delay)
+                else:
+                    logger.error(f"❌ Достигнут лимит перезапусков ({max_restarts}). Бот остановлен.")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"❌ Неожиданная ошибка в основном цикле: {e}")
+            logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
+            
+            restart_count += 1
+            if not shutdown_flag and restart_count < max_restarts:
+                logger.info(f"🔄 Перезапуск через {restart_delay * 2} секунд (попытка {restart_count}/{max_restarts})...")
+                await asyncio.sleep(restart_delay * 2)
+            else:
+                logger.error(f"❌ Достигнут лимит перезапусков ({max_restarts}). Бот остановлен.")
+                break
+    
+    logger.info("🛑 Бот окончательно остановлен.")
+    
+    # Закрываем сессию
+    try:
+        await bot.session.close()
+        logger.info("✅ Сессия бота закрыта")
+    except:
+        pass
+
 # Основная функция запуска с обработкой ошибок
 async def main():
     """
     Основная функция запуска бота с обработкой ошибок и graceful shutdown
     """
-    global bot_instance, dp_instance
-    bot_instance = bot
-    dp_instance = dp
+    global shutdown_flag
     
-    logger.info("Starting tender bot with fixed bottom buttons and test system...")
-    logger.info("Registered SIGTERM and SIGINT handlers for graceful shutdown")
-    logger.info(f"Test system: {len(TEST_QUESTIONS)} questions ready")
-    logger.info(f"Quick actions: Mark all modules and preview questions available")
+    # Создаем задачу для запуска бота
+    bot_task = asyncio.create_task(run_bot_with_retries())
     
-    # Проверяем аудио файлы
-    await check_audio_files()
-    
-    # Проверяем токен и подключаемся к Telegram
     try:
-        bot_info = await bot.get_me()
-        logger.info(f"Bot started: @{bot_info.username} (ID: {bot_info.id})")
-        logger.info(f"Fixed bottom buttons: 10 main buttons always visible")
-        logger.info(f"Audio accompaniment: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} lessons")
-        logger.info(f"Test system: {len(TEST_QUESTIONS)} questions available")
+        # Ждем завершения задачи
+        await bot_task
+    except KeyboardInterrupt:
+        logger.info("✅ Получен KeyboardInterrupt, инициируем shutdown...")
+        shutdown_flag = True
+        await shutdown()
     except Exception as e:
-        logger.error(f"Failed to connect to Telegram API: {e}")
-        logger.error("Please check your BOT_TOKEN and internet connection")
-        return
-    
-    # Запускаем поллинг с обработкой ошибок
-    try:
-        logger.info("Starting polling...")
-        await dp.start_polling(bot)
-    except asyncio.CancelledError:
-        logger.info("Polling cancelled (graceful shutdown)")
-    except Exception as e:
-        logger.error(f"Polling error: {e}")
-        logger.info("Attempting to restart in 5 seconds...")
-        await asyncio.sleep(5)
-        
-        # Пробуем перезапустить
-        try:
-            await dp.start_polling(bot)
-        except Exception as e2:
-            logger.error(f"Failed to restart: {e2}")
-            logger.error("Bot stopped")
+        logger.error(f"❌ Необработанное исключение в main: {e}")
+        logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
+    finally:
+        # Гарантируем корректное завершение
+        if not bot_task.done():
+            bot_task.cancel()
+            try:
+                await bot_task
+            except asyncio.CancelledError:
+                pass
 
 # Точка входа с обработкой исключений
 if __name__ == "__main__":
     try:
+        # Выводим информацию о запуске
+        print("=" * 60)
+        print("🤖 Бот обучения тендерам с авто-перезапуском")
+        print("=" * 60)
+        print(f"📅 Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"🔄 Максимальное количество перезапусков: {max_restarts}")
+        print(f"⏱ Задержка между перезапусками: {restart_delay} сек")
+        print("=" * 60)
+        
+        # Запускаем основную функцию
         asyncio.run(main())
+        
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received")
+        print("\n\n✅ Бот остановлен пользователем (Ctrl+C)")
+        logger.info("Бот остановлен пользователем (KeyboardInterrupt)")
     except Exception as e:
-        logger.error(f"Unhandled exception: {e}")
-        logger.error("Bot crashed unexpectedly")
+        print(f"\n\n❌ Критическая ошибка: {e}")
+        logger.error(f"Критическая ошибка при запуске: {e}")
+        logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
+        sys.exit(1)
