@@ -466,10 +466,15 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="🔗 Полезные ссылки"),
                 KeyboardButton(text="🆘 Помощь"),
             ],
-            # Четвертый ряд (для теста)
+            # Четвертый ряд (для теста и быстрых действий)
             [
                 KeyboardButton(text="📝 Пройти тест"),
                 KeyboardButton(text="🏆 Результаты теста")
+            ],
+            # Пятый ряд (быстрые действия)
+            [
+                KeyboardButton(text="✅ Отметить все модули"),
+                KeyboardButton(text="📋 Показать вопросы")
             ]
         ],
         resize_keyboard=True,
@@ -682,6 +687,14 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
     module_text = f"{module['content']}\n\n"
     module_text += f"<b>📝 Практическое задание:</b> {module['task']}"
     
+    # Проверяем, отмечен ли модуль как пройденный
+    is_completed = False
+    if user_id in user_progress:
+        is_completed = (module_index + 1) in user_progress[user_id].get('completed_modules', [])
+    
+    if not is_completed:
+        module_text += "\n\n✅ <b>Не забудьте отметить модуль как пройденный после изучения!</b>"
+    
     # Отправляем текст модуля с клавиатурой навигации
     await message.answer(
         module_text,
@@ -699,9 +712,9 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
         )
 
 # Функции для тестирования
-async def start_test(message: Message, state: FSMContext):
+async def start_test_internal(message: Message, state: FSMContext):
     """
-    Начинает тестирование
+    Внутренняя функция запуска теста
     """
     user_id = message.from_user.id
     
@@ -710,7 +723,8 @@ async def start_test(message: Message, state: FSMContext):
         "current_question": 0,
         "answers": {},  # вопрос_id -> ответ
         "start_time": datetime.now().isoformat(),
-        "completed": False
+        "completed": False,
+        "skipped": []
     }
     
     await state.set_state(UserState.taking_test)
@@ -903,7 +917,7 @@ async def cmd_start(message: Message, state: FSMContext):
 • 📊 Отслеживание прогресса
 • <b>📝 Финальный тест</b> для проверки знаний
 
-<b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение в формате MP3.
+<b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение в формата MP3.
 
 <b>📝 После завершения всех модулей пройдите финальный тест для проверки знаний!</b>
 
@@ -916,6 +930,8 @@ async def cmd_start(message: Message, state: FSMContext):
 • <b>🆘 Помощь</b> - инструкция по использованию
 • <b>📝 Пройти тест</b> - финальный тест по курсу
 • <b>🏆 Результаты теста</b> - ваши результаты
+• <b>✅ Отметить все модули</b> - быстро отметить все модули пройденными
+• <b>📋 Показать вопросы</b> - предпросмотр вопросов теста
     """
     
     await message.answer(
@@ -1049,9 +1065,38 @@ async def handle_my_progress(message: Message):
     # Проверяем, пройдены ли все модули
     all_modules_completed = completed == total
     
-    if all_modules_completed and len(test_results) == 0:
-        progress_text += "\n🎉 <b>Поздравляем! Вы прошли все модули курса!</b>"
-        progress_text += "\n📝 <b>Рекомендуем пройти финальный тест для проверки знаний.</b>"
+    if all_modules_completed:
+        if len(test_results) == 0:
+            progress_text += "\n🎉 <b>Все модули пройдены! Вы готовы к тесту!</b>"
+            progress_text += "\n📝 <b>Нажмите '📝 Пройти тест' для проверки знаний.</b>"
+        else:
+            best_result = max(test_results, key=lambda x: x['percentage'])
+            progress_text += f"\n🏆 <b>Лучший результат теста:</b> {best_result['correct_answers']}/{best_result['total_questions']} ({best_result['percentage']:.1f}%)"
+    else:
+        progress_text += f"\n\n⚠️ <b>Для доступа к тесту необходимо пройти все модули.</b>"
+        progress_text += f"\n✅ <b>Вы можете отметить все модули как пройденные кнопкой ниже.</b>"
+        
+        # Добавляем клавиатуру с быстрыми действиями
+        quick_actions = ReplyKeyboardMarkup(
+            keyboard=[
+                [
+                    KeyboardButton(text="✅ Отметить все модули как пройденные"),
+                    KeyboardButton(text="📋 Показать вопросы теста")
+                ],
+                [
+                    KeyboardButton(text="📚 Меню курса"),
+                    KeyboardButton(text="📝 Пройти тест все равно")
+                ]
+            ],
+            resize_keyboard=True
+        )
+        
+        await message.answer(
+            progress_text,
+            reply_markup=quick_actions,
+            parse_mode=ParseMode.HTML
+        )
+        return
     
     progress_text += "\n<b>Продолжайте обучение! 💪</b>"
     
@@ -1139,6 +1184,10 @@ async def handle_help(message: Message):
 • Можно пропустить вопрос ("⏭ Пропустить")
 • Результаты сохраняются в вашем прогрессе
 
+<b>🚀 Быстрые действия:</b>
+• <b>✅ Отметить все модули</b> - быстро отмечает все модули как пройденные
+• <b>📋 Показать вопросы</b> - предварительный просмотр всех вопросов теста
+
 <b>📊 Отслеживание прогресса:</b>
 • В "📊 Моем прогрессе" видна статистика по пройденным урокам и прослушанным аудио
 • Процент завершения курса обновляется автоматически
@@ -1178,17 +1227,188 @@ async def handle_start_test(message: Message, state: FSMContext):
         total = len(MODULES)
         
         if completed < total:
+            # Создаем клавиатуру с опциями
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[
+                    [
+                        KeyboardButton(text="✅ Отметить все модули как пройденные"),
+                        KeyboardButton(text="📝 Пройти тест все равно")
+                    ],
+                    [
+                        KeyboardButton(text="📚 Вернуться к обучению"),
+                        KeyboardButton(text="📊 Мой прогресс")
+                    ]
+                ],
+                resize_keyboard=True
+            )
+            
             await message.answer(
-                f"❌ <b>Рекомендуем пройти все модули перед тестом.</b>\n\n"
-                f"Вы прошли {completed} из {total} модулей.\n"
-                f"Завершите обучение, затем возвращайтесь к тесту.",
-                reply_markup=get_main_keyboard(),
+                f"⚠️ <b>Внимание!</b>\n\n"
+                f"Вы прошли {completed} из {total} модулей.\n\n"
+                f"<b>Рекомендуемые варианты:</b>\n"
+                f"1️⃣ <b>Продолжить обучение</b> - завершить все модули\n"
+                f"2️⃣ <b>Отметить все модули</b> - если вы уже изучили материал\n"
+                f"3️⃣ <b>Пройти тест все равно</b> - начать тест сейчас\n\n"
+                f"<i>Для успешного прохождения теста рекомендуется завершить все модули.</i>",
+                reply_markup=keyboard,
                 parse_mode=ParseMode.HTML
             )
             return
     
-    # Начинаем тест
-    await start_test(message, state)
+    # Если все модули пройдены или пользователь выбрал "Пройти тест все равно"
+    await start_test_confirm(message, state)
+
+async def start_test_confirm(message: Message, state: FSMContext):
+    """
+    Подтверждение начала теста
+    """
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="✅ Начать тест"),
+                KeyboardButton(text="📋 Посмотреть вопросы")
+            ],
+            [
+                KeyboardButton(text="❌ Отмена"),
+                KeyboardButton(text="📊 Мой прогресс")
+            ]
+        ],
+        resize_keyboard=True
+    )
+    
+    test_info = f"""
+<b>📝 Информация о тесте:</b>
+
+🔢 <b>Количество вопросов:</b> {len(TEST_QUESTIONS)}
+⏱ <b>Рекомендуемое время:</b> 10-15 минут
+📊 <b>Проходной балл:</b> 5 из 8 правильных ответов
+🔄 <b>Повторные попытки:</b> Да, неограниченно
+
+<b>📋 Формат теста:</b>
+• Каждый вопрос имеет 4 варианта ответа (а, б, в, г)
+• Выберите один правильный ответ
+• Можно пропускать вопросы
+• Результаты сохраняются автоматически
+
+<b>🎯 Советы:</b>
+• Внимательно читайте вопросы
+• Исключайте заведомо неправильные варианты
+• Не торопитесь с ответами
+• Используйте знания из пройденных модулей
+
+<b>Готовы начать тест?</b>
+"""
+    
+    await message.answer(
+        test_info,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Сохраняем состояние ожидания подтверждения
+    await state.set_state(UserState.taking_test)
+    await state.update_data(waiting_confirmation=True)
+
+@dp.message(F.text == "✅ Начать тест")
+async def handle_confirm_start_test(message: Message, state: FSMContext):
+    """
+    Подтверждение начала теста
+    """
+    data = await state.get_data()
+    if data.get("waiting_confirmation"):
+        await state.update_data(waiting_confirmation=False)
+        await start_test_internal(message, state)
+
+@dp.message(F.text == "📝 Пройти тест все равно")
+async def handle_force_start_test(message: Message, state: FSMContext):
+    """
+    Принудительный запуск теста без проверки модулей
+    """
+    await message.answer(
+        "⚠️ <b>Вы начинаете тест, не завершив все модули.</b>\n\n"
+        "<i>Рекомендуем вернуться к изучению пропущенных модулей после теста.</i>",
+        parse_mode=ParseMode.HTML
+    )
+    await start_test_confirm(message, state)
+
+@dp.message(F.text == "✅ Отметить все модули")
+async def handle_mark_all_modules(message: Message):
+    """
+    Обработчик кнопки "Отметить все модули" из главного меню
+    """
+    await handle_mark_all_completed(message)
+
+@dp.message(F.text == "✅ Отметить все модули как пройденные")
+async def handle_mark_all_completed(message: Message):
+    """
+    Отмечает все модули как пройденные
+    """
+    user_id = message.from_user.id
+    
+    if user_id not in user_progress:
+        user_progress[user_id] = {
+            'start_date': datetime.now().isoformat(),
+            'completed_modules': [],
+            'last_module': 0,
+            'name': message.from_user.first_name,
+            'audio_listened': [],
+            'test_results': []
+        }
+    
+    # Отмечаем все модули как пройденные
+    user_progress[user_id]['completed_modules'] = list(range(1, len(MODULES) + 1))
+    
+    # Отмечаем все аудио как прослушанные
+    for i in range(1, len(MODULES) + 1):
+        if i not in user_progress[user_id].get('audio_listened', []):
+            user_progress[user_id].setdefault('audio_listened', []).append(i)
+    
+    await message.answer(
+        f"✅ Все {len(MODULES)} модуля отмечены как пройденные!\n\n"
+        "🎉 Теперь вы можете пройти финальный тест.\n"
+        "Нажмите кнопку '📝 Пройти тест' для начала тестирования.",
+        reply_markup=get_main_keyboard(),
+        parse_mode=ParseMode.HTML
+    )
+
+@dp.message(F.text == "📋 Показать вопросы")
+async def handle_show_all_questions(message: Message):
+    """
+    Показывает все вопросы теста для подготовки
+    """
+    test_preview = "<b>📋 Просмотр вопросов теста:</b>\n\n"
+    test_preview += "<i>Это предварительный просмотр. Ответы не будут сохранены.</i>\n\n"
+    
+    for i, question in enumerate(TEST_QUESTIONS, 1):
+        test_preview += f"<b>Вопрос {i}:</b>\n{question['question']}\n"
+        for option_key, option_text in question["options"].items():
+            test_preview += f"  {option_key}) {option_text}\n"
+        
+        # Показываем правильный ответ
+        correct_option = question["options"][question["correct"]]
+        test_preview += f"<i>Правильный ответ: {question['correct']}) {correct_option}</i>\n\n"
+    
+    test_preview += "📝 <b>Для прохождения реального теста нажмите '📝 Пройти тест'</b>"
+    
+    await message.answer(
+        test_preview,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_keyboard()
+    )
+
+@dp.message(F.text == "📋 Посмотреть вопросы")
+async def handle_preview_questions_before_test(message: Message):
+    """
+    Показывает вопросы перед началом теста
+    """
+    await handle_show_all_questions(message)
+
+@dp.message(F.text == "📋 Показать вопросы теста")
+async def handle_show_test_questions_from_progress(message: Message):
+    """
+    Показывает вопросы теста из раздела прогресса
+    """
+    await handle_show_all_questions(message)
 
 @dp.message(F.text == "🏆 Результаты теста")
 async def handle_test_results(message: Message):
@@ -1291,6 +1511,29 @@ async def handle_finish_test_early(message: Message, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
     await finish_test(message, state)
+
+@dp.message(F.text == "❌ Отмена")
+async def handle_cancel_test(message: Message, state: FSMContext):
+    """
+    Отмена начала теста
+    """
+    await state.clear()
+    await message.answer(
+        "❌ Начало теста отменено.",
+        reply_markup=get_main_keyboard()
+    )
+
+@dp.message(F.text == "📚 Вернуться к обучению")
+async def handle_back_to_learning(message: Message, state: FSMContext):
+    """
+    Возврат к обучению
+    """
+    await state.clear()
+    await message.answer(
+        "<b>📚 Возвращаемся к обучению...</b>",
+        reply_markup=get_main_keyboard(),
+        parse_mode=ParseMode.HTML
+    )
 
 # Обработчик выбора урока из списка
 @dp.message(F.text.startswith(("📚", "🏛️", "🏢", "💼", "🚀")))
@@ -1552,7 +1795,8 @@ async def handle_other_messages(message: Message):
             "/audio - Аудио уроки\n"
             "/test - Пройти финальный тест\n\n"
             "🎧 <b>Важно:</b> При выборе урока автоматически отправляется аудио-пояснение!\n"
-            "📝 <b>После завершения курса пройдите финальный тест!</b>",
+            "📝 <b>После завершения курса пройдите финальный тест!</b>\n"
+            "✅ <b>Для быстрого доступа к тесту используйте кнопку '✅ Отметить все модули'</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_keyboard()
         )
@@ -1598,6 +1842,7 @@ async def main():
     logger.info("Starting tender bot with fixed bottom buttons and test system...")
     logger.info("Registered SIGTERM and SIGINT handlers for graceful shutdown")
     logger.info(f"Test system: {len(TEST_QUESTIONS)} questions ready")
+    logger.info(f"Quick actions: Mark all modules and preview questions available")
     
     # Проверяем аудио файлы
     await check_audio_files()
@@ -1606,7 +1851,7 @@ async def main():
     try:
         bot_info = await bot.get_me()
         logger.info(f"Bot started: @{bot_info.username} (ID: {bot_info.id})")
-        logger.info(f"Fixed bottom buttons: 8 main buttons always visible")
+        logger.info(f"Fixed bottom buttons: 10 main buttons always visible")
         logger.info(f"Audio accompaniment: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} lessons")
         logger.info(f"Test system: {len(TEST_QUESTIONS)} questions available")
     except Exception as e:
