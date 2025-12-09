@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: tender-telegram-bot-audio
+    name: tender-bot-fixed-buttons
     env: python
     buildCommand: |
       pip install --upgrade pip
@@ -14,3 +14,7 @@ services:
     plan: free
     healthCheckPath: /
     healthCheckTimeout: 120
+    # Настройки для бесперебойной работы
+    restartPolicy: always
+    maxRestarts: 5
+    restartDelaySeconds: 10
