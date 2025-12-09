@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: tender-telegram-bot
+    name: tender-telegram-bot-audio
     env: python
     buildCommand: |
       pip install --upgrade pip
