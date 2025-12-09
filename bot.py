@@ -4,7 +4,8 @@ import logging
 import asyncio
 import signal
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
+import json
 
 # Импорты aiogram
 from aiogram import Bot, Dispatcher, types, F
@@ -87,6 +88,8 @@ dp = Dispatcher(storage=storage)
 class UserState(StatesGroup):
     viewing_module = State()
     waiting_feedback = State()
+    taking_test = State()
+    test_question = State()
 
 # Конфигурация аудиофайлов
 AUDIO_CONFIG = {
@@ -321,6 +324,106 @@ MODULES = [
     }
 ]
 
+# Тестовые вопросы (из файла)
+TEST_QUESTIONS = [
+    {
+        "id": 1,
+        "question": "Какой федеральный закон регулирует закупки государственных бюджетных учреждений (например, администрации города, больницы, школы) и характеризуется принципом максимальной экономии и прозрачности?",
+        "options": {
+            "а": "223-ФЗ",
+            "б": "Гражданский кодекс РФ",
+            "в": "44-ФЗ",
+            "г": "94-ФЗ"
+        },
+        "correct": "в",
+        "correct_text": "в) 44-ФЗ"
+    },
+    {
+        "id": 2,
+        "question": "Основное отличие закупок по 223-ФЗ от закупок по 44-ФЗ заключается в том, что:",
+        "options": {
+            "а": "У каждого заказчика по 223-ФЗ есть собственное Положение о закупке, которое нужно изучать в первую очередь.",
+            "б": "Закупки по 223-ФЗ всегда проводятся в виде аукциона.",
+            "в": "Для участия в закупках по 223-ФЗ не требуется электронная подпись.",
+            "г": "Закупки по 223-ФЗ не размещаются на официальных сайтах."
+        },
+        "correct": "а",
+        "correct_text": "а) У каждого заказчика по 223-ФЗ есть собственное Положение о закупке, которое нужно изучать в первую очередь."
+    },
+    {
+        "id": 3,
+        "question": "Какой способ закупки по 44-ФЗ является самым популярным, где побеждает участник, предложивший самую низкую цену?",
+        "options": {
+            "а": "Открытый конкурс",
+            "б": "Запрос котировок",
+            "в": "Электронный аукцион",
+            "г": "Закрытый конкурс"
+        },
+        "correct": "в",
+        "correct_text": "в) Электронный аукцион"
+    },
+    {
+        "id": 4,
+        "question": "Каков правильный порядок первоначальных шагов для начала участия в электронных торгах по 44-ФЗ и 223-ФЗ?",
+        "options": {
+            "а": "Подать заявку на тендер → Изучить документацию → Получить электронную подпись",
+            "б": "Получить электронную подпись → Пройти аккредитацию на электронных торговых площадках (ЭТП) → Найти закупку",
+            "в": "Найти закупку → Заключить контракт → Внести обеспечение заявки",
+            "г": "Аккредитоваться на ЭТП → Участвовать в аукционе → Получить электронную подпись"
+        },
+        "correct": "б",
+        "correct_text": "б) Получить электронную подпись → Пройти аккредитацию на электронных торговых площадках (ЭТП) → Найти закупку"
+    },
+    {
+        "id": 5,
+        "question": "Какая из перечисленных ошибок является самой типичной для новичка в тендерах?",
+        "options": {
+            "а": "Слишком детальное изучение технического задания.",
+            "б": "Задать уточняющий вопрос заказчику.",
+            "в": "Пропустить мелкое требование в документации или не вовремя подать заявку.",
+            "г": "Анализ результатов прошлых закупок."
+        },
+        "correct": "в",
+        "correct_text": "в) Пропустить мелкое требование в документации или не вовремя подать заявку."
+    },
+    {
+        "id": 6,
+        "question": "Для коммерческих тендеров (например, закупки крупной частной компании) характерно:",
+        "options": {
+            "а": "Строгое регулирование по 44-ФЗ.",
+            "б": "Главный и единственный критерий победы — самая низкая цена.",
+            "в": "Правила устанавливает сама компания-заказчик, сильно ценится репутация.",
+            "г": "Все результаты и процедуры всегда публичны и не могут быть оспорены."
+        },
+        "correct": "в",
+        "correct_text": "в) Правила устанавливает сама компания-заказчик, сильно ценится репутация."
+    },
+    {
+        "id": 7,
+        "question": "Какой официальный сайт является единой точкой для поиска информации о закупках по 44-ФЗ и 223-ФЗ?",
+        "options": {
+            "а": "b2b-center.ru",
+            "б": "sberbank-ast.ru",
+            "в": "zakupki.gov.ru",
+            "г": "roseltorg.ru"
+        },
+        "correct": "в",
+        "correct_text": "в) zakupki.gov.ru"
+    },
+    {
+        "id": 8,
+        "question": "Рекомендуемая стратегия для первых шагов в тендерах — это:",
+        "options": {
+            "а": "Сразу участвовать в 10 крупных конкурсах.",
+            "б": "Выбрать 1-2 простых тендера с минимальными требованиями для получения опыта.",
+            "в": "Ждать, пока заказчик сам найдет вас и предложит контракт.",
+            "г": "Участвовать только в коммерческих тендерах, игнорируя государственные."
+        },
+        "correct": "б",
+        "correct_text": "б) Выбрать 1-2 простых тендера с минимальными требованиями для получения опыта."
+    }
+]
+
 # Дополнительные материалы
 ADDITIONAL_MATERIALS = {
     "links": {
@@ -362,6 +465,11 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
             [
                 KeyboardButton(text="🔗 Полезные ссылки"),
                 KeyboardButton(text="🆘 Помощь"),
+            ],
+            # Четвертый ряд (для теста)
+            [
+                KeyboardButton(text="📝 Пройти тест"),
+                KeyboardButton(text="🏆 Результаты теста")
             ]
         ],
         resize_keyboard=True,
@@ -397,6 +505,57 @@ def get_lesson_navigation_keyboard(current_index: int, total_modules: int) -> Re
         resize_keyboard=True,
         one_time_keyboard=False,
         input_field_placeholder="Управление уроком..."
+    )
+    return keyboard
+
+# Клавиатура для теста
+def get_test_keyboard(question_num: int, total_questions: int) -> ReplyKeyboardMarkup:
+    """
+    Создает клавиатуру для прохождения теста
+    """
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            # Варианты ответов
+            [
+                KeyboardButton(text="а"),
+                KeyboardButton(text="б"),
+            ],
+            [
+                KeyboardButton(text="в"),
+                KeyboardButton(text="г"),
+            ],
+            # Навигация
+            [
+                KeyboardButton(text="⏭ Пропустить"),
+                KeyboardButton(text=f"📝 {question_num}/{total_questions}"),
+                KeyboardButton(text="🏁 Завершить тест")
+            ]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="Выберите вариант ответа..."
+    )
+    return keyboard
+
+# Клавиатура после теста
+def get_after_test_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Создает клавиатуру после завершения теста
+    """
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="📊 Мой прогресс"),
+                KeyboardButton(text="🏆 Результаты теста")
+            ],
+            [
+                KeyboardButton(text="📚 Меню курса"),
+                KeyboardButton(text="🔙 Главное меню")
+            ]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="Выберите действие..."
     )
     return keyboard
 
@@ -539,6 +698,179 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
             parse_mode=ParseMode.HTML
         )
 
+# Функции для тестирования
+async def start_test(message: Message, state: FSMContext):
+    """
+    Начинает тестирование
+    """
+    user_id = message.from_user.id
+    
+    # Инициализируем данные теста
+    test_data = {
+        "current_question": 0,
+        "answers": {},  # вопрос_id -> ответ
+        "start_time": datetime.now().isoformat(),
+        "completed": False
+    }
+    
+    await state.set_state(UserState.taking_test)
+    await state.update_data(test_data=test_data)
+    
+    # Отправляем первый вопрос
+    await send_test_question(message, state, 0)
+
+async def send_test_question(message: Message, state: FSMContext, question_index: int = None):
+    """
+    Отправляет вопрос теста
+    """
+    data = await state.get_data()
+    test_data = data.get("test_data", {})
+    
+    if question_index is None:
+        question_index = test_data.get("current_question", 0)
+    
+    if question_index >= len(TEST_QUESTIONS):
+        await finish_test(message, state)
+        return
+    
+    question = TEST_QUESTIONS[question_index]
+    
+    # Формируем текст вопроса
+    question_text = f"<b>📝 Вопрос {question_index + 1} из {len(TEST_QUESTIONS)}</b>\n\n"
+    question_text += f"{question['question']}\n\n"
+    
+    # Добавляем варианты ответов
+    for option_key, option_text in question["options"].items():
+        question_text += f"<b>{option_key})</b> {option_text}\n"
+    
+    question_text += "\n<i>Выберите вариант ответа (а, б, в, г)</i>"
+    
+    # Обновляем текущий вопрос в состоянии
+    test_data["current_question"] = question_index
+    await state.update_data(test_data=test_data)
+    
+    await message.answer(
+        question_text,
+        reply_markup=get_test_keyboard(question_index + 1, len(TEST_QUESTIONS)),
+        parse_mode=ParseMode.HTML
+    )
+
+async def process_test_answer(message: Message, state: FSMContext, answer: str):
+    """
+    Обрабатывает ответ на вопрос теста
+    """
+    data = await state.get_data()
+    test_data = data.get("test_data", {})
+    current_question = test_data.get("current_question", 0)
+    
+    if current_question >= len(TEST_QUESTIONS):
+        return
+    
+    # Сохраняем ответ
+    question = TEST_QUESTIONS[current_question]
+    test_data["answers"][question["id"]] = answer
+    await state.update_data(test_data=test_data)
+    
+    # Переходим к следующему вопросу
+    next_question = current_question + 1
+    
+    if next_question < len(TEST_QUESTIONS):
+        await send_test_question(message, state, next_question)
+    else:
+        await finish_test(message, state)
+
+async def finish_test(message: Message, state: FSMContext):
+    """
+    Завершает тест и показывает результаты
+    """
+    data = await state.get_data()
+    test_data = data.get("test_data", {})
+    user_id = message.from_user.id
+    
+    # Вычисляем результаты
+    correct_answers = 0
+    total_questions = len(TEST_QUESTIONS)
+    results = []
+    
+    for question in TEST_QUESTIONS:
+        question_id = question["id"]
+        user_answer = test_data.get("answers", {}).get(question_id)
+        correct_answer = question["correct"]
+        
+        is_correct = user_answer == correct_answer
+        if is_correct:
+            correct_answers += 1
+        
+        results.append({
+            "question_id": question_id,
+            "question": question["question"][:50] + "...",
+            "user_answer": user_answer,
+            "correct_answer": correct_answer,
+            "correct_text": question["correct_text"],
+            "is_correct": is_correct
+        })
+    
+    # Вычисляем процент
+    percentage = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
+    
+    # Определяем оценку
+    if correct_answers >= 7:
+        grade = "Отлично! Вы прекрасно усвоили материал курса и готовы к первым шагам в мире тендеров."
+    elif correct_answers >= 5:
+        grade = "Хорошо. Вы поняли основные принципы, но рекомендуем еще раз повторить модули, где были допущены ошибки."
+    else:
+        grade = "Не переживайте! Вернитесь к материалам экспресс-курса и уделите внимание основам (модули 1-3). Практика и повторение — ключ к успеху!"
+    
+    # Сохраняем результаты в прогресс пользователя
+    if user_id not in user_progress:
+        user_progress[user_id] = {}
+    
+    test_result = {
+        "date": datetime.now().isoformat(),
+        "correct_answers": correct_answers,
+        "total_questions": total_questions,
+        "percentage": percentage,
+        "grade": grade,
+        "results": results
+    }
+    
+    user_progress[user_id]["test_results"] = user_progress[user_id].get("test_results", [])
+    user_progress[user_id]["test_results"].append(test_result)
+    
+    # Формируем текст результатов
+    result_text = f"""
+<b>🏆 Результаты теста</b>
+
+✅ <b>Правильных ответов:</b> {correct_answers} из {total_questions}
+📊 <b>Процент выполнения:</b> {percentage:.1f}%
+⭐ <b>Оценка:</b> {correct_answers}/{total_questions}
+
+<b>{grade}</b>
+
+<b>📋 Детальные результаты:</b>
+"""
+    
+    for i, result in enumerate(results, 1):
+        status = "✅" if result["is_correct"] else "❌"
+        result_text += f"\n{status} <b>Вопрос {i}:</b>"
+        result_text += f"\nВаш ответ: <b>{result['user_answer'] if result['user_answer'] else 'нет ответа'}</b>"
+        result_text += f"\nПравильный: <b>{result['correct_text']}</b>\n"
+    
+    result_text += f"\n<b>📅 Дата прохождения:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    result_text += "\n\n<b>🎯 Рекомендации:</b>"
+    result_text += "\n• Повторите модули с вопросами, на которые ответили неправильно"
+    result_text += "\n• Практикуйтесь на реальных тендерах"
+    result_text += "\n• Задавайте вопросы в поддержку"
+    
+    await message.answer(
+        result_text,
+        reply_markup=get_after_test_keyboard(),
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Сбрасываем состояние теста
+    await state.clear()
+
 # Обработчики команд
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -555,7 +887,8 @@ async def cmd_start(message: Message, state: FSMContext):
             'completed_modules': [],
             'last_module': 0,
             'name': user_name,
-            'audio_listened': []
+            'audio_listened': [],
+            'test_results': []
         }
     
     welcome_text = f"""
@@ -568,8 +901,11 @@ async def cmd_start(message: Message, state: FSMContext):
 • 🎧 <b>Аудио-сопровождение к каждому уроку</b>
 • 📝 Практические задания
 • 📊 Отслеживание прогресса
+• <b>📝 Финальный тест</b> для проверки знаний
 
 <b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение в формате MP3.
+
+<b>📝 После завершения всех модулей пройдите финальный тест для проверки знаний!</b>
 
 <b>Используйте кнопки внизу для навигации:</b>
 • <b>📚 Меню курса</b> - список всех уроков
@@ -578,6 +914,8 @@ async def cmd_start(message: Message, state: FSMContext):
 • <b>📞 Контакты</b> - связь с поддержкой
 • <b>🔗 Полезные ссылки</b> - важные ресурсы
 • <b>🆘 Помощь</b> - инструкция по использованию
+• <b>📝 Пройти тест</b> - финальный тест по курсу
+• <b>🏆 Результаты теста</b> - ваши результаты
     """
     
     await message.answer(
@@ -678,6 +1016,10 @@ async def handle_my_progress(message: Message):
     audio_total = sum(1 for module in MODULES if module.get("has_audio", False))
     audio_percentage = (audio_listened / audio_total * 100) if audio_total > 0 else 0
     
+    # Статистика тестов
+    test_results = progress.get('test_results', [])
+    last_test = test_results[-1] if test_results else None
+    
     progress_text = f"""
 <b>📊 Ваш прогресс в курсе:</b>
 
@@ -688,9 +1030,13 @@ async def handle_my_progress(message: Message):
 <b>Статистика:</b>
 ✅ <b>Пройдено уроков:</b> {completed}/{total} ({percentage:.1f}%)
 🎧 <b>Прослушано аудио:</b> {audio_listened}/{audio_total} ({audio_percentage:.1f}%)
-
-<b>Статус уроков:</b>
+📝 <b>Пройдено тестов:</b> {len(test_results)}
 """
+    
+    if last_test:
+        progress_text += f"🏆 <b>Последний тест:</b> {last_test['correct_answers']}/{last_test['total_questions']} ({last_test['percentage']:.1f}%)\n"
+    
+    progress_text += "\n<b>Статус уроков:</b>\n"
     
     for i in range(1, total + 1):
         module = MODULES[i-1]
@@ -699,6 +1045,13 @@ async def handle_my_progress(message: Message):
             progress_text += f"✅ {audio_icon} День {module['day']}: {module['title'][:25]}\n"
         else:
             progress_text += f"⏳ День {module['day']}: {module['title'][:25]}\n"
+    
+    # Проверяем, пройдены ли все модули
+    all_modules_completed = completed == total
+    
+    if all_modules_completed and len(test_results) == 0:
+        progress_text += "\n🎉 <b>Поздравляем! Вы прошли все модули курса!</b>"
+        progress_text += "\n📝 <b>Рекомендуем пройти финальный тест для проверки знаний.</b>"
     
     progress_text += "\n<b>Продолжайте обучение! 💪</b>"
     
@@ -780,9 +1133,16 @@ async def handle_help(message: Message):
 • "✅ Отметить пройденным" - отмечайте пройденные уроки
 • "🔙 Назад в главное меню" - возврат к основным кнопкам
 
+<b>📝 Финальный тест:</b>
+• <b>📝 Пройти тест</b> - запуск финального теста (8 вопросов)
+• Выберите вариант ответа (а, б, в, г)
+• Можно пропустить вопрос ("⏭ Пропустить")
+• Результаты сохраняются в вашем прогрессе
+
 <b>📊 Отслеживание прогресса:</b>
 • В "📊 Моем прогрессе" видна статистика по пройденным урокам и прослушанным аудио
 • Процент завершения курса обновляется автоматически
+• <b>🏆 Результаты теста</b> - история пройденных тестов
 
 <b>🔧 Технические проблемы:</b>
 • Если аудио не приходит, попробуйте кнопку "🎧 Прослушать аудио"
@@ -803,6 +1163,134 @@ async def handle_help(message: Message):
         parse_mode=ParseMode.HTML,
         reply_markup=get_main_keyboard()
     )
+
+# Обработчики для теста
+@dp.message(F.text == "📝 Пройти тест")
+async def handle_start_test(message: Message, state: FSMContext):
+    """
+    Запускает тестирование
+    """
+    user_id = message.from_user.id
+    
+    # Проверяем, прошел ли пользователь все модули
+    if user_id in user_progress:
+        completed = len(user_progress[user_id].get('completed_modules', []))
+        total = len(MODULES)
+        
+        if completed < total:
+            await message.answer(
+                f"❌ <b>Рекомендуем пройти все модули перед тестом.</b>\n\n"
+                f"Вы прошли {completed} из {total} модулей.\n"
+                f"Завершите обучение, затем возвращайтесь к тесту.",
+                reply_markup=get_main_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+            return
+    
+    # Начинаем тест
+    await start_test(message, state)
+
+@dp.message(F.text == "🏆 Результаты теста")
+async def handle_test_results(message: Message):
+    """
+    Показывает результаты тестов пользователя
+    """
+    user_id = message.from_user.id
+    
+    if user_id not in user_progress:
+        await message.answer(
+            "❌ Вы еще не проходили тестирование. Начните обучение с /start",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    test_results = user_progress[user_id].get('test_results', [])
+    
+    if not test_results:
+        await message.answer(
+            "📝 <b>У вас еще нет результатов тестирования.</b>\n\n"
+            "Пройти тест можно после изучения всех модулей курса.\n"
+            "Нажмите кнопку '📝 Пройти тест' для начала.",
+            reply_markup=get_main_keyboard(),
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Показываем последний результат
+    last_test = test_results[-1]
+    
+    result_text = f"""
+<b>🏆 Результаты последнего теста:</b>
+
+📅 <b>Дата:</b> {datetime.fromisoformat(last_test['date']).strftime('%d.%m.%Y %H:%M')}
+✅ <b>Правильных ответов:</b> {last_test['correct_answers']} из {last_test['total_questions']}
+📊 <b>Процент выполнения:</b> {last_test['percentage']:.1f}%
+⭐ <b>Оценка:</b> {last_test['correct_answers']}/{last_test['total_questions']}
+
+<b>📋 Детальные результаты:</b>
+"""
+    
+    for i, result in enumerate(last_test['results'], 1):
+        status = "✅" if result["is_correct"] else "❌"
+        result_text += f"\n{status} <b>Вопрос {i}:</b>"
+        result_text += f"\nВаш ответ: <b>{result['user_answer'] if result['user_answer'] else 'нет ответа'}</b>"
+        result_text += f"\nПравильный: <b>{result['correct_text']}</b>\n"
+    
+    # Показываем историю
+    if len(test_results) > 1:
+        result_text += f"\n<b>📊 История тестов:</b> {len(test_results)} попыток"
+        for i, test in enumerate(test_results[-5:], 1):  # Последние 5 попыток
+            date_str = datetime.fromisoformat(test['date']).strftime('%d.%m')
+            result_text += f"\n{i}. {date_str}: {test['correct_answers']}/{test['total_questions']} ({test['percentage']:.1f}%)"
+    
+    result_text += "\n\n<b>🎯 Совет:</b> Для улучшения результатов повторите модули с ошибками."
+    
+    await message.answer(
+        result_text,
+        reply_markup=get_main_keyboard(),
+        parse_mode=ParseMode.HTML
+    )
+
+# Обработчики ответов на тест
+@dp.message(F.text.in_({"а", "б", "в", "г"}), UserState.taking_test)
+async def handle_test_answer(message: Message, state: FSMContext):
+    """
+    Обрабатывает ответ на вопрос теста
+    """
+    await process_test_answer(message, state, message.text)
+
+@dp.message(F.text == "⏭ Пропустить", UserState.taking_test)
+async def handle_skip_question(message: Message, state: FSMContext):
+    """
+    Пропускает текущий вопрос
+    """
+    data = await state.get_data()
+    test_data = data.get("test_data", {})
+    current_question = test_data.get("current_question", 0)
+    
+    # Переходим к следующему вопросу
+    next_question = current_question + 1
+    
+    if next_question < len(TEST_QUESTIONS):
+        await message.answer(
+            f"⏭ Вопрос {current_question + 1} пропущен.",
+            parse_mode=ParseMode.HTML
+        )
+        await send_test_question(message, state, next_question)
+    else:
+        await finish_test(message, state)
+
+@dp.message(F.text == "🏁 Завершить тест", UserState.taking_test)
+async def handle_finish_test_early(message: Message, state: FSMContext):
+    """
+    Завершает тест досрочно
+    """
+    await message.answer(
+        "📝 <b>Тест завершен досрочно.</b>\n\n"
+        "Вы можете пройти тест снова в любое время.",
+        parse_mode=ParseMode.HTML
+    )
+    await finish_test(message, state)
 
 # Обработчик выбора урока из списка
 @dp.message(F.text.startswith(("📚", "🏛️", "🏢", "💼", "🚀")))
@@ -861,8 +1349,11 @@ async def handle_next_lesson(message: Message, state: FSMContext):
         await show_module(message, current_module + 1, state)
     else:
         await message.answer(
-            "✅ Это последний урок курса! Поздравляем с завершением!",
-            reply_markup=get_lesson_navigation_keyboard(current_module, len(MODULES))
+            "✅ Это последний урок курса! Поздравляем с завершением!\n\n"
+            "📝 <b>Теперь вы можете пройти финальный тест для проверки знаний!</b>\n"
+            "Нажмите кнопку '📝 Пройти тест' в главном меню.",
+            reply_markup=get_lesson_navigation_keyboard(current_module, len(MODULES)),
+            parse_mode=ParseMode.HTML
         )
 
 @dp.message(F.text == "🎧 Прослушать аудио")
@@ -914,7 +1405,8 @@ async def handle_complete_lesson(message: Message, state: FSMContext):
                 'completed_modules': [],
                 'last_module': current_module,
                 'name': message.from_user.first_name,
-                'audio_listened': []
+                'audio_listened': [],
+                'test_results': []
             }
         
         module_num = current_module + 1
@@ -924,6 +1416,22 @@ async def handle_complete_lesson(message: Message, state: FSMContext):
                 f"✅ Урок {module_num} отмечен как пройденный!",
                 reply_markup=get_lesson_navigation_keyboard(current_module, len(MODULES))
             )
+            
+            # Проверяем, пройдены ли все модули
+            completed = len(user_progress[user_id]['completed_modules'])
+            total = len(MODULES)
+            
+            if completed == total:
+                await message.answer(
+                    "🎉 <b>Поздравляем! Вы завершили все модули курса!</b>\n\n"
+                    "📝 <b>Теперь вы можете пройти финальный тест:</b>\n"
+                    "1. Проверить свои знания\n"
+                    "2. Получить оценку\n"
+                    "3. Увидеть рекомендации по улучшению\n\n"
+                    "Нажмите кнопку '📝 Пройти тест' в главном меню!",
+                    reply_markup=get_main_keyboard(),
+                    parse_mode=ParseMode.HTML
+                )
         else:
             await message.answer(
                 "ℹ️ Этот урок уже отмечен как пройденный",
@@ -939,6 +1447,18 @@ async def handle_complete_lesson(message: Message, state: FSMContext):
 async def handle_back_to_main(message: Message, state: FSMContext):
     """
     Возврат в главное меню
+    """
+    await state.clear()
+    await message.answer(
+        "<b>📋 Главное меню:</b>\n\nВы вернулись в главное меню.",
+        reply_markup=get_main_keyboard(),
+        parse_mode=ParseMode.HTML
+    )
+
+@dp.message(F.text == "🔙 Главное меню")
+async def handle_back_to_main_from_test(message: Message, state: FSMContext):
+    """
+    Возврат в главное меню из результатов теста
     """
     await state.clear()
     await message.answer(
@@ -1006,6 +1526,14 @@ async def cmd_audio(message: Message, command: CommandObject):
             reply_markup=get_main_keyboard()
         )
 
+# Обработчик команды /test
+@dp.message(Command("test"))
+async def cmd_test(message: Message, state: FSMContext):
+    """
+    Обработчик команды /test
+    """
+    await handle_start_test(message, state)
+
 # Обработчик всех остальных сообщений
 @dp.message()
 async def handle_other_messages(message: Message):
@@ -1021,8 +1549,10 @@ async def handle_other_messages(message: Message):
             "/menu - Главное меню\n"
             "/help - Помощь\n"
             "/progress - Ваш прогресс\n"
-            "/audio - Аудио уроки\n\n"
-            "🎧 <b>Важно:</b> При выборе урока автоматически отправляется аудио-пояснение!",
+            "/audio - Аудио уроки\n"
+            "/test - Пройти финальный тест\n\n"
+            "🎧 <b>Важно:</b> При выборе урока автоматически отправляется аудио-пояснение!\n"
+            "📝 <b>После завершения курса пройдите финальный тест!</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_keyboard()
         )
@@ -1065,8 +1595,9 @@ async def main():
     bot_instance = bot
     dp_instance = dp
     
-    logger.info("Starting tender bot with fixed bottom buttons...")
+    logger.info("Starting tender bot with fixed bottom buttons and test system...")
     logger.info("Registered SIGTERM and SIGINT handlers for graceful shutdown")
+    logger.info(f"Test system: {len(TEST_QUESTIONS)} questions ready")
     
     # Проверяем аудио файлы
     await check_audio_files()
@@ -1075,8 +1606,9 @@ async def main():
     try:
         bot_info = await bot.get_me()
         logger.info(f"Bot started: @{bot_info.username} (ID: {bot_info.id})")
-        logger.info(f"Fixed bottom buttons: 6 main buttons always visible")
+        logger.info(f"Fixed bottom buttons: 8 main buttons always visible")
         logger.info(f"Audio accompaniment: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} lessons")
+        logger.info(f"Test system: {len(TEST_QUESTIONS)} questions available")
     except Exception as e:
         logger.error(f"Failed to connect to Telegram API: {e}")
         logger.error("Please check your BOT_TOKEN and internet connection")
