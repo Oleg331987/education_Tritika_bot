@@ -94,7 +94,7 @@ MODULES = [
 <code>Пример поиска: Поставка офисной мебели</code>""",
         "task": "Найти и изучить 2 тендера в вашей сфере деятельности",
         "audio_file": "module1.mp3",
-        "audio_duration": 120,
+        "audio_duration": 28,
         "audio_title": "Основы тендерной системы",
         "has_audio": True
     },
@@ -1041,3 +1041,4 @@ async def main():
 # Точка входа
 if __name__ == "__main__":
     asyncio.run(main())
+
