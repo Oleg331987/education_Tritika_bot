@@ -2,9 +2,15 @@ services:
   - type: web
     name: tender-telegram-bot
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install --upgrade setuptools wheel
+      pip install -r requirements.txt
     startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
         sync: false
+    autoDeploy: true
     plan: free
+    healthCheckPath: /
+    healthCheckTimeout: 120
