@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import json
 import traceback
+import aiohttp
 
 # Импорты aiogram
 from aiogram import Bot, Dispatcher, types, F
@@ -36,8 +37,13 @@ bot_instance = None
 dp_instance = None
 shutdown_flag = False
 restart_count = 0
-max_restarts = 50  # Максимальное количество перезапусков
-restart_delay = 5  # Задержка между перезапусками в секундах
+max_restarts = 100  # Максимальное количество перезапусков
+restart_delay = 10  # Задержка между перезапусками в секундах
+
+# Конфигурация keep-alive
+KEEP_ALIVE_INTERVAL = 300  # 5 минут
+last_activity_time = datetime.now()
+keep_alive_task = None
 
 # Обработчики сигналов для graceful shutdown
 def signal_handler(sig, frame):
@@ -54,6 +60,16 @@ def signal_handler(sig, frame):
 async def shutdown():
     """Корректное завершение работы бота"""
     logger.info("Начинаем graceful shutdown...")
+    
+    global keep_alive_task
+    # Останавливаем задачу keep-alive
+    if keep_alive_task:
+        keep_alive_task.cancel()
+        try:
+            await keep_alive_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Keep-alive задача остановлена")
     
     try:
         # Останавливаем polling
@@ -1058,6 +1074,9 @@ async def cmd_start(message: Message, state: FSMContext):
     """
     Обработчик команды /start
     """
+    global last_activity_time
+    last_activity_time = datetime.now()
+    
     user_id = message.from_user.id
     user_name = message.from_user.first_name
     
@@ -1114,11 +1133,27 @@ async def cmd_menu(message: Message):
     """
     Обработчик команды /menu
     """
+    global last_activity_time
+    last_activity_time = datetime.now()
+    
     await message.answer(
         "<b>📋 Главное меню:</b>\n\nИспользуйте кнопки внизу для навигации.",
         reply_markup=get_main_keyboard(),
         parse_mode=ParseMode.HTML
     )
+
+# Мидлварь для отслеживания активности
+@dp.update.outer_middleware()
+async def update_activity_middleware(handler, event, data):
+    """
+    Мидлварь для отслеживания активности пользователей
+    """
+    global last_activity_time
+    last_activity_time = datetime.now()
+    
+    # Продолжаем обработку
+    result = await handler(event, data)
+    return result
 
 # Обработчики кнопок главного меню
 @dp.message(F.text == "📚 Меню курса")
@@ -1877,6 +1912,22 @@ async def handle_back_to_main_from_test(message: Message, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
 
+# Команда для проверки активности бота
+@dp.message(Command("ping"))
+async def cmd_ping(message: Message):
+    """
+    Проверка активности бота
+    """
+    await message.answer(
+        f"🏓 <b>Pong!</b>\n\n"
+        f"🕒 <b>Время последней активности:</b> {last_activity_time.strftime('%H:%M:%S')}\n"
+        f"📊 <b>Активных пользователей:</b> {len(user_progress)}\n"
+        f"🔄 <b>Перезапусков:</b> {restart_count}\n"
+        f"✅ <b>Бот активен!</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_keyboard()
+    )
+
 # Обработчик команды /help
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
@@ -1944,6 +1995,32 @@ async def cmd_test(message: Message, state: FSMContext):
     """
     await handle_start_test(message, state)
 
+# Обработчик команды /status
+@dp.message(Command("status"))
+async def cmd_status(message: Message):
+    """
+    Показывает статус бота
+    """
+    status_text = f"""
+<b>📊 Статус бота:</b>
+
+🕒 <b>Время запуска:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+👥 <b>Активных пользователей:</b> {len(user_progress)}
+🔄 <b>Перезапусков:</b> {restart_count}/{max_restarts}
+⏱ <b>Последняя активность:</b> {last_activity_time.strftime('%H:%M:%S')}
+📚 <b>Модулей в курсе:</b> {len(MODULES)}
+🎧 <b>Аудио уроков:</b> {sum(1 for m in MODULES if m.get('has_audio'))}
+📝 <b>Вопросов в тесте:</b> {len(TEST_QUESTIONS)}
+
+<b>✅ Бот работает стабильно</b>
+"""
+    
+    await message.answer(
+        status_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_keyboard()
+    )
+
 # Обработчик всех остальных сообщений
 @dp.message()
 async def handle_other_messages(message: Message):
@@ -1960,7 +2037,9 @@ async def handle_other_messages(message: Message):
             "/help - Помощь\n"
             "/progress - Ваш прогресс\n"
             "/audio - Аудио уроки\n"
-            "/test - Пройти финальный тест\n\n"
+            "/test - Пройти финальный тест\n"
+            "/ping - Проверить активность бота\n"
+            "/status - Статус бота\n\n"
             "🎧 <b>Важно:</b> При выборе урока автоматически отправляется аудио-пояснение!\n"
             "📝 <b>После завершения курса пройдите финальный тест!</b>\n"
             "✅ <b>Для быстрого доступа к тесту используйте кнопку '✅ Отметить все модули'</b>",
@@ -1997,12 +2076,46 @@ async def check_audio_files():
     
     return len(missing_files) == 0
 
+# Keep-alive задача для предотвращения "засыпания" бота
+async def keep_alive():
+    """
+    Задача для поддержания активности бота
+    """
+    global last_activity_time
+    
+    while not shutdown_flag:
+        try:
+            # Проверяем, когда была последняя активность
+            now = datetime.now()
+            time_since_last_activity = (now - last_activity_time).total_seconds()
+            
+            # Если прошло больше 5 минут, обновляем время активности
+            if time_since_last_activity > KEEP_ALIVE_INTERVAL:
+                logger.info(f"Keep-alive: обновляем время активности (прошло {time_since_last_activity:.0f} секунд)")
+                last_activity_time = now
+                
+                # Попробуем получить информацию о боте для поддержания соединения
+                try:
+                    await bot.get_me()
+                    logger.info("Keep-alive: проверка соединения с Telegram API прошла успешно")
+                except Exception as e:
+                    logger.warning(f"Keep-alive: ошибка проверки соединения: {e}")
+            
+            # Ждем 1 минуту перед следующей проверкой
+            await asyncio.sleep(60)
+            
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Ошибка в keep-alive задаче: {e}")
+            await asyncio.sleep(60)
+
 # Функция для запуска бота с повторными попытками
 async def run_bot_with_retries():
     """
     Запускает бота с повторными попытками при сбоях
     """
-    global bot_instance, dp_instance, shutdown_flag, restart_count
+    global bot_instance, dp_instance, shutdown_flag, restart_count, keep_alive_task
     
     bot_instance = bot
     dp_instance = dp
@@ -2025,6 +2138,7 @@ async def run_bot_with_retries():
                 logger.info(f"✅ Аудио сопровождение: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} уроков")
                 logger.info(f"✅ Система тестирования: {len(TEST_QUESTIONS)} вопросов доступно")
                 logger.info(f"✅ Новый модуль 6: Добавлен модуль с итогами курса и чек-листом")
+                logger.info(f"✅ Keep-alive система: Активирована для предотвращения 'засыпания'")
             except Exception as e:
                 logger.error(f"❌ Не удалось подключиться к Telegram API: {e}")
                 logger.error("Проверьте ваш BOT_TOKEN и подключение к интернету")
@@ -2034,10 +2148,14 @@ async def run_bot_with_retries():
                     await asyncio.sleep(restart_delay)
                 continue
             
+            # Запускаем keep-alive задачу
+            keep_alive_task = asyncio.create_task(keep_alive())
+            logger.info("✅ Keep-alive задача запущена")
+            
             # Запускаем поллинг с обработкой ошибок
             try:
                 logger.info("🔄 Начинаем polling...")
-                await dp.start_polling(bot)
+                await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
             except asyncio.CancelledError:
                 logger.info("✅ Polling отменен (graceful shutdown)")
                 break
@@ -2066,6 +2184,15 @@ async def run_bot_with_retries():
                 break
     
     logger.info("🛑 Бот окончательно остановлен.")
+    
+    # Останавливаем keep-alive задачу
+    if keep_alive_task:
+        keep_alive_task.cancel()
+        try:
+            await keep_alive_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("✅ Keep-alive задача остановлена")
     
     # Закрываем сессию
     try:
@@ -2116,6 +2243,13 @@ if __name__ == "__main__":
         print(f"📚 Количество модулей: {len(MODULES)} (включая новый модуль 6)")
         print(f"🎧 Аудио файлов: {sum(1 for m in MODULES if m.get('has_audio'))}")
         print(f"📝 Вопросов в тесте: {len(TEST_QUESTIONS)}")
+        print(f"🔄 Keep-alive интервал: {KEEP_ALIVE_INTERVAL//60} минут")
+        print("=" * 60)
+        print("Доступные команды в боте:")
+        print("/start - Начать обучение")
+        print("/ping - Проверить активность бота")
+        print("/status - Статус бота")
+        print("/test - Пройти тест")
         print("=" * 60)
         
         # Запускаем основную функцию
