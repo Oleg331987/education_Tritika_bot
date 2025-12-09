@@ -1,13 +1,15 @@
 import os
+import sys
 import logging
 import asyncio
+import signal
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 
 # Импорты aiogram
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -26,11 +28,50 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Глобальные переменные для graceful shutdown
+bot_instance = None
+dp_instance = None
+
+# Обработчики сигналов для graceful shutdown
+def signal_handler(sig, frame):
+    """Обработчик сигналов для graceful shutdown"""
+    logger.info(f"Received signal {sig}, initiating graceful shutdown...")
+    
+    if bot_instance and dp_instance:
+        asyncio.create_task(shutdown())
+    else:
+        sys.exit(0)
+
+async def shutdown():
+    """Корректное завершение работы бота"""
+    logger.info("Starting graceful shutdown...")
+    
+    try:
+        # Останавливаем polling
+        if dp_instance:
+            await dp_instance.stop_polling()
+            logger.info("Polling stopped successfully")
+        
+        # Закрываем сессию бота
+        if bot_instance:
+            await bot_instance.session.close()
+            logger.info("Bot session closed successfully")
+            
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+    finally:
+        logger.info("Shutdown completed")
+        sys.exit(0)
+
+# Регистрация обработчиков сигналов
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
 # Проверка токена бота
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN не установлен! Установите переменную окружения.")
-    exit(1)
+    sys.exit(1)
 
 # Инициализация бота с настройками по умолчанию
 bot = Bot(
@@ -73,7 +114,7 @@ MODULES = [
 
 ✅ <b>Основные законы:</b>
 • <b>44-ФЗ</b> — жесткие правила для госзаказчиков
-• <b>223-ФЗ</b> — гибкие правила для госкомпаний
+• <b>223-ФЗ</b> — гибкие правила для госкорпораций
 • <b>Коммерческие тендеры</b> — правила устанавливает компания
 
 🔗 <b>Полезные ссылки:</b>
@@ -94,7 +135,7 @@ MODULES = [
 <code>Пример поиска: Поставка офисной мебели</code>""",
         "task": "Найти и изучить 2 тендера в вашей сфере деятельности",
         "audio_file": "module1.mp3",
-        "audio_duration": 28,
+        "audio_duration": 120,
         "audio_title": "Основы тендерной системы",
         "has_audio": True
     },
@@ -1015,30 +1056,56 @@ async def check_audio_files():
     
     return len(missing_files) == 0
 
-# Основная функция запуска
+# Основная функция запуска с обработкой ошибок
 async def main():
     """
-    Основная функция запуска бота
+    Основная функция запуска бота с обработкой ошибок и graceful shutdown
     """
+    global bot_instance, dp_instance
+    bot_instance = bot
+    dp_instance = dp
+    
     logger.info("Starting tender bot with fixed bottom buttons...")
+    logger.info("Registered SIGTERM and SIGINT handlers for graceful shutdown")
     
     # Проверяем аудио файлы
     await check_audio_files()
     
-    # Проверяем токен
+    # Проверяем токен и подключаемся к Telegram
     try:
         bot_info = await bot.get_me()
-        logger.info(f"Bot started: @{bot_info.username}")
+        logger.info(f"Bot started: @{bot_info.username} (ID: {bot_info.id})")
         logger.info(f"Fixed bottom buttons: 6 main buttons always visible")
         logger.info(f"Audio accompaniment: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} lessons")
     except Exception as e:
-        logger.error(f"Failed to start bot: {e}")
+        logger.error(f"Failed to connect to Telegram API: {e}")
+        logger.error("Please check your BOT_TOKEN and internet connection")
         return
     
-    # Запускаем поллинг
-    await dp.start_polling(bot)
+    # Запускаем поллинг с обработкой ошибок
+    try:
+        logger.info("Starting polling...")
+        await dp.start_polling(bot)
+    except asyncio.CancelledError:
+        logger.info("Polling cancelled (graceful shutdown)")
+    except Exception as e:
+        logger.error(f"Polling error: {e}")
+        logger.info("Attempting to restart in 5 seconds...")
+        await asyncio.sleep(5)
+        
+        # Пробуем перезапустить
+        try:
+            await dp.start_polling(bot)
+        except Exception as e2:
+            logger.error(f"Failed to restart: {e2}")
+            logger.error("Bot stopped")
 
-# Точка входа
+# Точка входа с обработкой исключений
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received")
+    except Exception as e:
+        logger.error(f"Unhandled exception: {e}")
+        logger.error("Bot crashed unexpectedly")
