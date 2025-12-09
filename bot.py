@@ -2,17 +2,18 @@ import os
 import logging
 import asyncio
 from datetime import datetime
+from typing import Optional, Dict, List
 
-# Правильные импорты aiogram 3.x
+# Импорты aiogram
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command, CommandObject
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode, ContentType
 
 # Настройка логирования
 logging.basicConfig(
@@ -43,10 +44,16 @@ dp = Dispatcher(storage=storage)
 
 # Состояния пользователя
 class UserState(StatesGroup):
-    viewing_module = State()  # Состояние просмотра модуля
-    waiting_feedback = State()  # Состояние ожидания отзыва
+    viewing_module = State()
+    waiting_feedback = State()
 
-# Данные курса (модули)
+# Конфигурация аудиофайлов
+AUDIO_CONFIG = {
+    "base_path": "audio/",
+    "default_format": ".mp3",
+}
+
+# Данные курса с аудио
 MODULES = [
     {
         "id": 1,
@@ -58,9 +65,11 @@ MODULES = [
 ✅ <b>Что такое тендер?</b>
 Это конкурентная форма размещения заказов на поставку товаров, выполнение работ или оказание услуг, при которой заказчик выбирает исполнителя на основе заранее объявленных критериев.
 
+Проще говоря, это процедура, где несколько компаний (поставщиков) предлагают свои условия (в первую очередь цену) для победы в контракте, а заказчик выбирает самое выгодное для себя предложение.
+
 ✅ <b>Участники системы:</b>
-• Заказчик — государство, госкомпания, бизнес
-• Поставщик — компания (Вы)
+• <b>Заказчик</b> — государство, госкомпания, бизнес
+• <b>Поставщик</b> — компания (Вы)
 
 ✅ <b>Основные законы:</b>
 • <b>44-ФЗ</b> — жесткие правила для госзаказчиков
@@ -72,6 +81,8 @@ MODULES = [
 • 223-ФЗ: https://www.consultant.ru/document/cons_doc_LAW_116964/
 • ЕИС: https://zakupki.gov.ru
 
+🎧 <b>Аудио сопровождение:</b> В этом аудио мы подробно разберем основы тендерной системы и расскажем, с чего начать новичку.
+
 📝 <b>Практическое задание:</b>
 Найдите 2-3 тендера в вашей сфере: один по 44-ФЗ, один по 223-ФЗ на сайте zakupki.gov.ru
 
@@ -81,7 +92,11 @@ MODULES = [
 4. Нажмите «Применить»
 
 <code>Пример поиска: Поставка офисной мебели</code>""",
-        "task": "Найти и изучить 2 тендера в вашей сфере деятельности"
+        "task": "Найти и изучить 2 тендера в вашей сфере деятельности",
+        "audio_file": "module1.mp3",
+        "audio_duration": 120,
+        "audio_title": "Основы тендерной системы",
+        "has_audio": True
     },
     {
         "id": 2,
@@ -112,6 +127,8 @@ MODULES = [
 8. 🤝 Обеспечение контракта
 9. ✍️ Заключение контракта
 
+🎧 <b>Аудио сопровождение:</b> В аудио мы детально разберем каждый этап участия в закупках по 44-ФЗ и дадим практические рекомендации.
+
 📝 <b>Практическое задание:</b>
 Выберите простой аукцион по 44-ФЗ и изучите документацию:
 
@@ -120,7 +137,11 @@ MODULES = [
 3. Установите фильтр «44-ФЗ»
 4. Найдите закупку на сумму до 500 тыс. руб.
 5. Скачайте и изучите документацию""",
-        "task": "Изучить документацию к одному аукциону по 44-ФЗ"
+        "task": "Изучить документацию к одному аукциону по 44-ФЗ",
+        "audio_file": "module2.mp3",
+        "audio_duration": 180,
+        "audio_title": "Работа с 44-ФЗ: практическое руководство",
+        "has_audio": True
     },
     {
         "id": 3,
@@ -146,6 +167,8 @@ MODULES = [
 🔗 <b>Полезные ссылки:</b>
 • Статья о 223-ФЗ: https://zakupki.kontur.ru/site/articles/22556-223fz2
 
+🎧 <b>Аудио сопровождение:</b> Мы расскажем, как эффективно работать с госкорпорациями и какие возможности открывает 223-ФЗ.
+
 📝 <b>Практическое задание:</b>
 Найдите закупку по 223-ФЗ от крупной госкомпании:
 
@@ -154,7 +177,11 @@ MODULES = [
 3. Выберите «Положения о закупке 223-ФЗ»
 4. Найдите закупку от компаний: РЖД, Ростелеком, Газпром
 5. Изучите Положение о закупке""",
-        "task": "Найти и изучить Положение о закупке компании по 223-ФЗ"
+        "task": "Найти и изучить Положение о закупке компании по 223-ФЗ",
+        "audio_file": "module3.mp3",
+        "audio_duration": 150,
+        "audio_title": "Корпоративные закупки по 223-ФЗ",
+        "has_audio": True
     },
     {
         "id": 4,
@@ -189,12 +216,18 @@ MODULES = [
 3. 📝 Меньше формальностей
 4. ⚖️ Нет обязанности заключать контракт с победителем
 
+🎧 <b>Аудио сопровождение:</b> Узнайте, как выигрывать коммерческие тендеры и строить долгосрочные отношения с бизнес-заказчиками.
+
 📝 <b>Практическое задание:</b>
 1. Составьте список из 5-10 компаний вашей отрасли
 2. Найдите на их сайтах разделы закупок
 3. Зарегистрируйтесь на B2B-Center
 4. Найдите 3 интересующие вас закупки""",
-        "task": "Составить список потенциальных заказчиков и зарегистрироваться на B2B-Center"
+        "task": "Составить список потенциальных заказчиков и зарегистрироваться на B2B-Center",
+        "audio_file": "module4.mp3",
+        "audio_duration": 165,
+        "audio_title": "Стратегии работы с коммерческими заказчиками",
+        "has_audio": True
     },
     {
         "id": 5,
@@ -215,7 +248,7 @@ MODULES = [
    • Приобретите Рутокен
 
 3. <b>Зарегистрируйтесь в системах:</b>
-   • Госуслуги (ЕСИА): https://www.gosuslugi.ru
+   • Госуслуги (ЕИА): https://www.gosuslugi.ru
    • ЕИС: https://zakupki.gov.ru
    • 5-8 электронных торговых площадок
 
@@ -236,8 +269,14 @@ MODULES = [
 4. Не внести обеспечение
 5. Бояться задавать вопросы
 
+🎧 <b>Аудио сопровождение:</b> Практический план действий на первые 30 дней и разбор частых ошибок.
+
 🎯 <b>Ваш первый тендер — это ценный опыт, даже если не победите!</b>""",
-        "task": "Составить личный план действий на первые 30 дней"
+        "task": "Составить личный план действий на первые 30 дней",
+        "audio_file": "module5.mp3",
+        "audio_duration": 210,
+        "audio_title": "Практический план: первые шаги в тендерах",
+        "has_audio": True
     }
 ]
 
@@ -258,19 +297,97 @@ ADDITIONAL_MATERIALS = {
     }
 }
 
-# Словарь для хранения прогресса пользователей (в реальном проекте используйте БД)
+# Словарь для хранения прогресса пользователей
 user_progress = {}
 
-# Функция создания клавиатуры навигации
-def get_navigation_keyboard(current_index: int, total_modules: int, user_id: int = None) -> InlineKeyboardMarkup:
+# Вспомогательные функции для работы с аудио
+class AudioManager:
+    """Менеджер для работы с аудиофайлами"""
+    
+    @staticmethod
+    def get_audio_path(module_index: int) -> Optional[str]:
+        """Получить путь к аудиофайлу модуля"""
+        if 0 <= module_index < len(MODULES):
+            module = MODULES[module_index]
+            audio_file = module.get("audio_file")
+            if audio_file:
+                audio_path = os.path.join(AUDIO_CONFIG["base_path"], audio_file)
+                # Проверяем существование файла
+                if os.path.exists(audio_path):
+                    return audio_path
+                else:
+                    logger.warning(f"Audio file not found: {audio_path}")
+        return None
+    
+    @staticmethod
+    def audio_exists(module_index: int) -> bool:
+        """Проверить существование аудиофайла"""
+        return AudioManager.get_audio_path(module_index) is not None
+    
+    @staticmethod
+    def get_audio_info(module_index: int) -> Dict:
+        """Получить информацию об аудио модуля"""
+        if 0 <= module_index < len(MODULES):
+            module = MODULES[module_index]
+            return {
+                "file": module.get("audio_file"),
+                "duration": module.get("audio_duration", 0),
+                "title": module.get("audio_title", ""),
+                "exists": AudioManager.audio_exists(module_index),
+                "has_audio": module.get("has_audio", False)
+            }
+        return {}
+    
+    @staticmethod
+    async def send_module_audio(chat_id: int, module_index: int, message_thread_id: int = None) -> bool:
+        """Отправить аудио сопровождение для модуля"""
+        try:
+            audio_path = AudioManager.get_audio_path(module_index)
+            if not audio_path:
+                logger.warning(f"No audio for module {module_index}")
+                return False
+            
+            module = MODULES[module_index]
+            audio_info = AudioManager.get_audio_info(module_index)
+            
+            # Создаем объект файла
+            audio_file = FSInputFile(audio_path)
+            
+            # Формируем описание
+            caption = f"🎧 <b>{module['emoji']} Аудио-сопровождение к модулю {module_index + 1}</b>\n"
+            caption += f"<b>{module['title']}</b>\n\n"
+            caption += f"⏱ <b>Длительность:</b> {audio_info['duration']//60}:{audio_info['duration']%60:02d}\n"
+            caption += f"📚 <b>Описание:</b> {audio_info['title']}\n\n"
+            caption += "<i>Рекомендуем прослушать аудио для лучшего усвоения материала</i>"
+            
+            # Отправляем аудио
+            await bot.send_audio(
+                chat_id=chat_id,
+                audio=audio_file,
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                message_thread_id=message_thread_id
+            )
+            
+            logger.info(f"Audio sent for module {module_index + 1} to chat {chat_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error sending audio for module {module_index}: {e}")
+            return False
+
+# Функция создания клавиатуры с аудио
+def get_module_keyboard(current_index: int, total_modules: int, user_id: int = None) -> InlineKeyboardMarkup:
     """
-    Создает клавиатуру для навигации по модулям
+    Создает клавиатуру для модуля с кнопками навигации
     """
     builder = InlineKeyboardBuilder()
     
     # Кнопки навигации
+    nav_buttons = []
+    
     if current_index > 0:
-        builder.button(text="⬅️ Назад", callback_data=f"prev_{current_index-1}")
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"prev_{current_index-1}"))
     
     # Информация о прогрессе
     if user_id and user_id in user_progress:
@@ -282,12 +399,19 @@ def get_navigation_keyboard(current_index: int, total_modules: int, user_id: int
     else:
         status = "📖"
     
-    builder.button(text=f"{status} {current_index+1}/{total_modules}", callback_data="show_progress")
+    nav_buttons.append(InlineKeyboardButton(text=f"{status} {current_index+1}/{total_modules}", callback_data="show_progress"))
     
     if current_index < total_modules - 1:
-        builder.button(text="Вперед ➡️", callback_data=f"next_{current_index+1}")
+        nav_buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"next_{current_index+1}"))
     
-    builder.adjust(3)
+    builder.row(*nav_buttons)
+    
+    # Кнопка повторного прослушивания аудио
+    audio_info = AudioManager.get_audio_info(current_index)
+    if audio_info.get("exists"):
+        builder.row(
+            InlineKeyboardButton(text="🎧 Прослушать аудио ещё раз", callback_data=f"audio_{current_index}")
+        )
     
     # Дополнительные кнопки
     builder.row(
@@ -302,7 +426,7 @@ def get_navigation_keyboard(current_index: int, total_modules: int, user_id: int
     
     return builder.as_markup()
 
-# Клавиатура главного меню
+# Клавиатура главного меню с аудио-иконками
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     """
     Создает главное меню курса
@@ -310,8 +434,9 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     for module in MODULES:
+        audio_icon = "🎧 " if module.get("has_audio", False) else ""
         builder.button(
-            text=f"{module['emoji']} День {module['day']}: {module['title'][:20]}...",
+            text=f"{module['emoji']} {audio_icon}День {module['day']}: {module['title'][:25]}...",
             callback_data=f"module_{module['id']-1}"
         )
     
@@ -320,17 +445,74 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     # Дополнительные кнопки
     builder.row(
         InlineKeyboardButton(text="📊 Мой прогресс", callback_data="my_progress"),
-        InlineKeyboardButton(text="⭐ Оставить отзыв", callback_data="leave_feedback")
+        InlineKeyboardButton(text="🎧 Все аудио-уроки", callback_data="all_audio")
+    )
+    
+    builder.row(
+        InlineKeyboardButton(text="⭐ Оставить отзыв", callback_data="leave_feedback"),
+        InlineKeyboardButton(text="ℹ️ О курсе", callback_data="about")
     )
     
     builder.row(
         InlineKeyboardButton(text="🆘 Помощь", callback_data="help"),
-        InlineKeyboardButton(text="ℹ️ О курсе", callback_data="about")
+        InlineKeyboardButton(text="📱 Наш сайт", url="https://tritika.ru")
     )
     
     return builder.as_markup()
 
-# Хендлер команды /start
+# Функция отображения модуля с автоматической отправкой аудио
+async def show_module(message: Message, module_index: int, state: FSMContext):
+    """
+    Показывает выбранный модуль и автоматически отправляет аудио сопровождение
+    """
+    module = MODULES[module_index]
+    user_id = message.from_user.id
+    
+    # Обновляем состояние
+    await state.set_state(UserState.viewing_module)
+    await state.update_data(current_module=module_index)
+    
+    # Обновляем последний просмотренный модуль
+    if user_id in user_progress:
+        user_progress[user_id]['last_module'] = module_index
+    
+    # Формируем сообщение
+    module_text = f"{module['content']}\n\n"
+    module_text += f"<b>📝 Практическое задание:</b> {module['task']}"
+    
+    # Отправляем текст модуля
+    if isinstance(message, CallbackQuery):
+        await message.message.edit_text(
+            module_text,
+            reply_markup=get_module_keyboard(module_index, len(MODULES), user_id),
+            parse_mode=ParseMode.HTML
+        )
+        chat_id = message.message.chat.id
+    else:
+        await message.answer(
+            module_text,
+            reply_markup=get_module_keyboard(module_index, len(MODULES), user_id),
+            parse_mode=ParseMode.HTML
+        )
+        chat_id = message.chat.id
+    
+    # Автоматически отправляем аудио сопровождение
+    audio_sent = await AudioManager.send_module_audio(chat_id, module_index)
+    
+    if not audio_sent and module.get("has_audio", False):
+        # Если аудио не отправилось, но должно быть
+        if isinstance(message, CallbackQuery):
+            await message.message.answer(
+                "❌ Аудио сопровождение временно недоступно. Попробуйте позже.",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await message.answer(
+                "❌ Аудио сопровождение временно недоступно. Попробуйте позже.",
+                parse_mode=ParseMode.HTML
+            )
+
+# Обработчики команд
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """
@@ -345,19 +527,22 @@ async def cmd_start(message: Message, state: FSMContext):
             'start_date': datetime.now().isoformat(),
             'completed_modules': [],
             'last_module': 0,
-            'name': user_name
+            'name': user_name,
+            'audio_listened': []
         }
     
-    # Приветственное сообщение
     welcome_text = f"""
 <b>👋 Привет, {user_name}!</b>
 
 Добро пожаловать на <b>Экспресс-курс: "Тендеры с нуля"</b>!
 
-🎯 <b>Цель курса:</b> Дать системное понимание работы в сфере госзакупок и коммерческих тендеров.
+🎯 <b>Особенности курса:</b>
+• 📚 5 модулей с теорией и практикой
+• 🎧 <b>Аудио-сопровождение к каждому уроку</b>
+• 📝 Практические задания
+• 📊 Отслеживание прогресса
 
-📅 <b>Формат:</b> 5 дней, 1 модуль в день + практические задания
-👥 <b>Уровень:</b> Начинающий → Практик
+🎧 <b>Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение в формате MP3.
 
 <b>Выберите действие:</b>
     """
@@ -368,10 +553,8 @@ async def cmd_start(message: Message, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
     
-    # Сбрасываем состояние
     await state.clear()
 
-# Хендлер команды /help
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
     """
@@ -386,20 +569,25 @@ async def cmd_help(message: Message):
 /menu - Открыть главное меню
 /progress - Посмотреть свой прогресс
 /module [номер] - Перейти к конкретному модулю
+/audio [номер] - Прослушать аудио модуля
 
 <b>Навигация:</b>
 • Используйте кнопки "Вперед"/"Назад" для перехода между модулями
-• "Меню курса" - выбор любого модуля
+• При выборе урока автоматически отправляется аудио-сопровождение
+• "Прослушать аудио ещё раз" - повторное прослушивание аудио
 • "Отметить пройденным" - отметить текущий модуль как завершенный
 
+<b>🎧 Аудио сопровождение:</b>
+Каждый урок сопровождается аудио-пояснением в формате MP3. Аудио отправляется автоматически при выборе урока.
+
 <b>Техническая поддержка:</b>
-По всем вопросам пишите на: info@tritika.ru
-Или звоните: +7(4922)223-222
+📧 Email: info@tritika.ru
+📞 Телефон: +7(4922)223-222
+🌐 Сайт: https://tritika.ru
     """
     
     await message.answer(help_text, parse_mode=ParseMode.HTML)
 
-# Хендлер команды /menu
 @dp.message(Command("menu"))
 async def cmd_menu(message: Message):
     """
@@ -411,7 +599,6 @@ async def cmd_menu(message: Message):
         parse_mode=ParseMode.HTML
     )
 
-# Хендлер команды /progress
 @dp.message(Command("progress"))
 async def cmd_progress(message: Message):
     """
@@ -428,25 +615,33 @@ async def cmd_progress(message: Message):
     total = len(MODULES)
     percentage = (completed / total) * 100 if total > 0 else 0
     
+    # Аудио статистика
+    audio_listened = len(progress.get('audio_listened', []))
+    audio_total = sum(1 for module in MODULES if module.get("has_audio", False))
+    audio_percentage = (audio_listened / audio_total * 100) if audio_total > 0 else 0
+    
     progress_text = f"""
 <b>📊 Ваш прогресс:</b>
 
-🎓 <b>Пройдено модулей:</b> {completed}/{total} ({percentage:.1f}%)
+👤 <b>Студент:</b> {progress.get('name', 'Не указано')}
 📅 <b>Дата начала:</b> {progress['start_date'][:10]}
-👤 <b>Имя:</b> {progress.get('name', 'Не указано')}
+
+<b>Прогресс обучения:</b>
+🎓 <b>Пройдено модулей:</b> {completed}/{total} ({percentage:.1f}%)
+🎧 <b>Прослушано аудио:</b> {audio_listened}/{audio_total} ({audio_percentage:.1f}%)
 
 <b>Модули:</b>
 """
     
     for i, module in enumerate(MODULES, 1):
         status = "✅" if i in progress.get('completed_modules', []) else "⏳"
-        progress_text += f"{status} День {module['day']}: {module['title']}\n"
+        audio_status = "🎧" if i in progress.get('audio_listened', []) else ""
+        progress_text += f"{status} {audio_status} День {module['day']}: {module['title'][:30]}...\n"
     
     progress_text += "\n<b>Продолжайте в том же духе! 💪</b>"
     
     await message.answer(progress_text, parse_mode=ParseMode.HTML)
 
-# Хендлер команды /module
 @dp.message(Command("module"))
 async def cmd_module(message: Message, command: CommandObject, state: FSMContext):
     """
@@ -465,41 +660,59 @@ async def cmd_module(message: Message, command: CommandObject, state: FSMContext
     except ValueError:
         await message.answer("❌ Неверный формат номера модуля. Используйте: /module 1")
 
-# Функция отображения модуля
-async def show_module(message: Message, module_index: int, state: FSMContext):
+@dp.message(Command("audio"))
+async def cmd_audio(message: Message, command: CommandObject):
     """
-    Показывает выбранный модуль
+    Обработчик команды /audio [номер модуля]
     """
-    module = MODULES[module_index]
-    user_id = message.from_user.id
-    
-    # Обновляем состояние
-    await state.set_state(UserState.viewing_module)
-    await state.update_data(current_module=module_index)
-    
-    # Обновляем последний просмотренный модуль
-    if user_id in user_progress:
-        user_progress[user_id]['last_module'] = module_index
-    
-    # Формируем сообщение
-    module_text = f"{module['content']}\n\n"
-    module_text += f"<b>📝 Практическое задание:</b> {module['task']}"
-    
-    # Отправляем сообщение
-    if isinstance(message, CallbackQuery):
-        await message.message.edit_text(
-            module_text,
-            reply_markup=get_navigation_keyboard(module_index, len(MODULES), user_id),
-            parse_mode=ParseMode.HTML
-        )
-    else:
-        await message.answer(
-            module_text,
-            reply_markup=get_navigation_keyboard(module_index, len(MODULES), user_id),
-            parse_mode=ParseMode.HTML
-        )
+    try:
+        if not command.args:
+            # Показать список всех аудио
+            await show_all_audio(message)
+            return
+        
+        module_num = int(command.args)
+        if 1 <= module_num <= len(MODULES):
+            module_index = module_num - 1
+            audio_info = AudioManager.get_audio_info(module_index)
+            
+            if audio_info.get("exists"):
+                await AudioManager.send_module_audio(message.chat.id, module_index)
+                # Отмечаем аудио как прослушанное
+                user_id = message.from_user.id
+                if user_id in user_progress:
+                    if module_num not in user_progress[user_id].get('audio_listened', []):
+                        user_progress[user_id].setdefault('audio_listened', []).append(module_num)
+            else:
+                await message.answer("❌ Аудио для этого модуля не найдено")
+        else:
+            await message.answer(f"❌ Модуль {module_num} не найден")
+    except ValueError:
+        await message.answer("❌ Неверный формат. Используйте: /audio 1")
 
-# Обработчик нажатия кнопок навигации
+async def show_all_audio(message: Message):
+    """
+    Показать все доступные аудио-уроки
+    """
+    audio_list = "<b>🎧 Все аудио-уроки курса:</b>\n\n"
+    
+    for i, module in enumerate(MODULES, 1):
+        audio_info = AudioManager.get_audio_info(i-1)
+        if audio_info.get("exists"):
+            duration_min = audio_info['duration'] // 60
+            duration_sec = audio_info['duration'] % 60
+            audio_list += f"🎧 <b>День {module['day']}:</b> {module['title']}\n"
+            audio_list += f"   ⏱ {duration_min}:{duration_sec:02d} • <code>/audio {i}</code>\n"
+            audio_list += f"   📝 {audio_info['title']}\n\n"
+    
+    if audio_list == "<b>🎧 Все аудио-уроки курса:</b>\n\n":
+        audio_list += "❌ Аудио-уроки пока не добавлены"
+    else:
+        audio_list += "<i>Используйте команду /audio [номер] для прослушивания</i>"
+    
+    await message.answer(audio_list, parse_mode=ParseMode.HTML)
+
+# Обработчик навигационных кнопок
 @dp.callback_query(F.data.startswith(("prev_", "next_", "module_")))
 async def handle_navigation(callback: CallbackQuery, state: FSMContext):
     """
@@ -521,6 +734,42 @@ async def handle_navigation(callback: CallbackQuery, state: FSMContext):
     except (ValueError, IndexError) as e:
         logger.error(f"Navigation error: {e}")
         await callback.answer("❌ Ошибка навигации", show_alert=True)
+
+# Обработчик кнопки "Прослушать аудио ещё раз"
+@dp.callback_query(F.data.startswith("audio_"))
+async def handle_audio_play(callback: CallbackQuery):
+    """
+    Обработчик кнопки повторного прослушивания аудио
+    """
+    try:
+        module_index = int(callback.data.split("_")[1])
+        user_id = callback.from_user.id
+        
+        # Отмечаем аудио как прослушанное
+        if user_id in user_progress:
+            if module_index + 1 not in user_progress[user_id].get('audio_listened', []):
+                user_progress[user_id].setdefault('audio_listened', []).append(module_index + 1)
+        
+        # Отправляем аудио
+        audio_sent = await AudioManager.send_module_audio(callback.message.chat.id, module_index)
+        
+        if audio_sent:
+            await callback.answer("🎧 Аудио отправлено!")
+        else:
+            await callback.answer("❌ Ошибка загрузки аудио", show_alert=True)
+            
+    except Exception as e:
+        logger.error(f"Audio play error: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+# Обработчик кнопки "Все аудио-уроки"
+@dp.callback_query(F.data == "all_audio")
+async def handle_all_audio(callback: CallbackQuery):
+    """
+    Показать все аудио-уроки
+    """
+    await show_all_audio(callback.message)
+    await callback.answer()
 
 # Обработчик кнопки "Меню курса"
 @dp.callback_query(F.data == "course_menu")
@@ -551,7 +800,8 @@ async def handle_complete_module(callback: CallbackQuery):
                 'start_date': datetime.now().isoformat(),
                 'completed_modules': [],
                 'last_module': module_index,
-                'name': callback.from_user.first_name
+                'name': callback.from_user.first_name,
+                'audio_listened': []
             }
         
         if module_num not in user_progress[user_id]['completed_modules']:
@@ -562,7 +812,7 @@ async def handle_complete_module(callback: CallbackQuery):
         
         # Обновляем клавиатуру
         await callback.message.edit_reply_markup(
-            reply_markup=get_navigation_keyboard(module_index, len(MODULES), user_id)
+            reply_markup=get_module_keyboard(module_index, len(MODULES), user_id)
         )
         
     except Exception as e:
@@ -575,10 +825,15 @@ async def handle_useful_links(callback: CallbackQuery):
     """
     Показывает полезные ссылки
     """
-    links_text = "<b>🔗 Полезные ссылки:</b>\n\n"
+    links_text = "<b>🔗 Полезные ссылки и ресурсы:</b>\n\n"
     
     for name, url in ADDITIONAL_MATERIALS['links'].items():
         links_text += f"• <a href='{url}'>{name}</a>\n"
+    
+    links_text += "\n<b>📱 Контакты поддержки:</b>\n"
+    links_text += f"📧 Email: {ADDITIONAL_MATERIALS['contacts']['email']}\n"
+    links_text += f"📞 Телефон: {ADDITIONAL_MATERIALS['contacts']['phone']}\n"
+    links_text += f"📲 Мобильный: {ADDITIONAL_MATERIALS['contacts']['mobile']}"
     
     await callback.message.answer(
         links_text,
@@ -603,8 +858,14 @@ async def handle_contacts(callback: CallbackQuery):
 🌐 <b>Сайт:</b> https://tritika.ru
 
 <b>📅 Часы работы поддержки:</b>
-Пн-Пт: 9:00-18:00
+Пн-Пт: 9:00-18:00 по МСК
 Сб-Вс: выходной
+
+<b>✉️ Пишите нам по любым вопросам:</b>
+• Технические проблемы с ботом
+• Вопросы по курсу
+• Консультации по тендерам
+• Предложения по сотрудничеству
     """
     
     await callback.message.answer(contacts_text, parse_mode=ParseMode.HTML)
@@ -625,21 +886,36 @@ async def handle_my_progress(callback: CallbackQuery):
     progress = user_progress[user_id]
     completed = len(progress.get('completed_modules', []))
     total = len(MODULES)
+    percentage = (completed / total) * 100 if total > 0 else 0
+    
+    # Аудио статистика
+    audio_listened = len(progress.get('audio_listened', []))
+    audio_total = sum(1 for module in MODULES if module.get("has_audio", False))
+    audio_percentage = (audio_listened / audio_total * 100) if audio_total > 0 else 0
     
     progress_text = f"""
-<b>📊 Ваш прогресс:</b>
+<b>📊 Ваш прогресс в курсе:</b>
 
-✅ <b>Пройдено:</b> {completed}/{total} модулей
-📈 <b>Процент завершения:</b> {completed/total*100:.1f}%
+👤 <b>Имя:</b> {progress.get('name', 'Не указано')}
+📅 <b>Дата начала:</b> {progress['start_date'][:10]}
+🎯 <b>Последний модуль:</b> {progress.get('last_module', 0) + 1}/{total}
+
+<b>Статистика:</b>
+✅ <b>Пройдено модулей:</b> {completed}/{total} ({percentage:.1f}%)
+🎧 <b>Прослушано аудио:</b> {audio_listened}/{audio_total} ({audio_percentage:.1f}%)
 
 <b>Статус модулей:</b>
 """
     
     for i in range(1, total + 1):
+        module = MODULES[i-1]
         if i in progress.get('completed_modules', []):
-            progress_text += f"✅ День {i}: {MODULES[i-1]['title']}\n"
+            audio_icon = "🎧" if i in progress.get('audio_listened', []) else ""
+            progress_text += f"✅ {audio_icon} День {module['day']}: {module['title'][:25]}...\n"
         else:
-            progress_text += f"⏳ День {i}: {MODULES[i-1]['title']}\n"
+            progress_text += f"⏳ День {module['day']}: {module['title'][:25]}...\n"
+    
+    progress_text += "\n<b>Продолжайте обучение! 💪</b>"
     
     await callback.message.answer(progress_text, parse_mode=ParseMode.HTML)
     await callback.answer()
@@ -653,28 +929,38 @@ async def handle_about(callback: CallbackQuery):
     about_text = """
 <b>ℹ️ О курсе "Тендеры с нуля":</b>
 
-🎯 <b>Цель:</b> Подготовить участников к успешному участию в государственных и коммерческих тендерах.
+🎯 <b>Цель курса:</b> Дать системное понимание работы в сфере госзакупок и коммерческих тендеров, чтобы вы могли уверенно начать участвовать и побеждать.
 
-<b>📅 Формат:</b>
-• 5 дней интенсивного обучения
-• 5 модулей с теорией и практикой
-• Пошаговые инструкции
-• Практические задания
+<b>📅 Формат обучения:</b>
+• <b>Продолжительность:</b> 5 дней
+• <b>Режим:</b> 1 модуль в день + практическое задание
+• <b>Уровень:</b> Начинающий → Практик
 
-<b>👥 Для кого:</b>
-• Начинающие предприниматели
-• Специалисты по закупкам
-• Фрилансеры
-• Все, кто хочет начать работать с госзаказом
+<b>🎧 Особенность курса:</b>
+Каждый модуль сопровождается <b>аудио-пояснением</b> в формате MP3, которое автоматически отправляется при выборе урока.
 
 <b>📚 Что вы получите:</b>
-1. Системное понимание тендеров
-2. Практические навыки участия
-3. Шаблоны документов
-4. Доступ к полезным ресурсам
-5. План действий на 30 дней
+1. Системное понимание тендерной системы
+2. Практические навыки участия в закупках
+3. Пошаговые инструкции по 44-ФЗ и 223-ФЗ
+4. Стратегии работы с коммерческими тендерами
+5. Практический план действий на первые 30 дней
+
+<b>👥 Для кого этот курс:</b>
+• Начинающие предприниматели
+• Специалисты по закупкам
+• Фрилансеры и самозанятые
+• Все, кто хочет начать работать с госзаказом
+• Владельцы малого и среднего бизнеса
+
+<b>🎓 По окончании курса вы:</b>
+1. Поймете разницу между 44-ФЗ, 223-ФЗ и коммерческими закупками
+2. Узнаете основные шаги для участия в тендерах
+3. Сможете находить подходящие закупки
+4. Составите практический план действий
 
 <b>Авторы:</b> Команда экспертов с многолетним опытом в госзакупках
+<b>Поддержка:</b> Доступ к материалам и консультациям
     """
     
     await callback.message.answer(about_text, parse_mode=ParseMode.HTML)
@@ -691,8 +977,9 @@ async def handle_leave_feedback(callback: CallbackQuery, state: FSMContext):
         "📝 Пожалуйста, напишите ваш отзыв о курсе:\n\n"
         "• Что понравилось?\n"
         "• Что можно улучшить?\n"
-        "• Ваши пожелания\n\n"
-        "<i>Отзыв будет отправлен разработчикам курса</i>",
+        "• Ваши пожелания по новым темам\n"
+        "• Оценка от 1 до 10\n\n"
+        "<i>Ваш отзыв поможет нам стать лучше! Он будет отправлен разработчикам курса.</i>",
         parse_mode=ParseMode.HTML
     )
     await callback.answer()
@@ -707,19 +994,79 @@ async def handle_feedback_message(message: Message, state: FSMContext):
     user_name = message.from_user.full_name
     user_id = message.from_user.id
     
-    # Здесь можно сохранить отзыв в базу данных или отправить на email
-    # В данном примере просто логируем
-    
+    # Сохраняем отзыв (в реальном приложении - в БД)
     logger.info(f"Feedback from {user_name} (ID: {user_id}): {feedback}")
     
     await message.answer(
         "✅ Спасибо за ваш отзыв! Он очень важен для нас.\n\n"
-        "Мы учтем ваши пожелания для улучшения курса!",
+        "Мы учтем ваши пожелания для улучшения курса и обязательно свяжемся с вами, если потребуются уточнения.\n\n"
+        "<i>С уважением, команда курса \"Тендеры с нуля\"</i>",
+        parse_mode=ParseMode.HTML,
         reply_markup=get_main_menu_keyboard()
     )
     
     # Сбрасываем состояние
     await state.clear()
+
+# Обработчик кнопки "Помощь"
+@dp.callback_query(F.data == "help")
+async def handle_help(callback: CallbackQuery):
+    """
+    Показывает справку
+    """
+    help_text = """
+<b>🆘 Справка по использованию бота:</b>
+
+<b>🎧 Аудио сопровождение:</b>
+• При выборе урока автоматически отправляется аудио-пояснение
+• Для повторного прослушивания нажмите "Прослушать аудио ещё раз"
+• Все аудио в формате MP3, совместимы с любыми устройствами
+
+<b>📚 Навигация по курсу:</b>
+• Используйте кнопки "Вперед/Назад" для перехода между модулями
+• "Меню курса" - выбор любого модуля
+• "Отметить пройденным" - отмечайте пройденные уроки
+
+<b>📊 Отслеживание прогресса:</b>
+• В "Моем прогрессе" видна статистика по пройденным урокам и прослушанным аудио
+• Процент завершения курса обновляется автоматически
+
+<b>🔧 Технические проблемы:</b>
+• Если аудио не приходит, попробуйте команду /audio [номер модуля]
+• При проблемах с ботом перезапустите его командой /start
+• Для сброса прогресса напишите в поддержку
+
+<b>📞 Контакты поддержки:</b>
+• Email: info@tritika.ru
+• Телефон: +7(4922)223-222
+• Сайт: https://tritika.ru
+
+<b>🕒 Часы работы поддержки:</b>
+Пн-Пт: 9:00-18:00 по МСК
+    """
+    
+    await callback.message.answer(help_text, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+# Обработчик кнопки "Наш сайт"
+@dp.callback_query(F.data == "website")
+async def handle_website(callback: CallbackQuery):
+    """
+    Перенаправляет на сайт
+    """
+    await callback.answer("Открываю сайт...")
+    # Отправляем ссылку
+    await callback.message.answer(
+        "🌐 <b>Наш официальный сайт:</b>\n"
+        "https://tritika.ru\n\n"
+        "<i>На сайте вы найдете:</i>\n"
+        "• Дополнительные материалы по тендерам\n"
+        "• Видео-уроки\n"
+        "• Шаблоны документов\n"
+        "• Консультации экспертов\n"
+        "• Информацию о вебинарах",
+        parse_mode=ParseMode.HTML
+    )
 
 # Обработчик всех остальных сообщений
 @dp.message()
@@ -727,27 +1074,64 @@ async def handle_other_messages(message: Message):
     """
     Обработчик всех прочих сообщений
     """
-    await message.answer(
-        "🤖 Я бот для обучения тендерам!\n\n"
-        "Используйте команды:\n"
-        "/start - Начать обучение\n"
-        "/menu - Открыть меню\n"
-        "/help - Помощь\n"
-        "/progress - Ваш прогресс",
-        reply_markup=get_main_menu_keyboard()
-    )
+    if message.content_type == ContentType.TEXT:
+        await message.answer(
+            "🤖 Я бот для обучения тендерам с аудио сопровождением!\n\n"
+            "<b>Основные команды:</b>\n"
+            "/start - Начать обучение\n"
+            "/menu - Открыть меню\n"
+            "/help - Помощь\n"
+            "/progress - Ваш прогресс\n"
+            "/audio - Список аудио-уроков\n\n"
+            "<b>🎧 Важно:</b> При выборе урока автоматически отправляется аудио-пояснение!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_main_menu_keyboard()
+        )
 
-# Функция запуска бота
+# Функция проверки аудио файлов при запуске
+async def check_audio_files():
+    """
+    Проверяет наличие всех аудио файлов при запуске бота
+    """
+    logger.info("Checking audio files...")
+    
+    missing_files = []
+    
+    for i, module in enumerate(MODULES):
+        audio_file = module.get("audio_file")
+        if audio_file:
+            audio_path = os.path.join(AUDIO_CONFIG["base_path"], audio_file)
+            if os.path.exists(audio_path):
+                file_size = os.path.getsize(audio_path) / (1024 * 1024)  # в МБ
+                logger.info(f"✓ Аудио для модуля {i+1}: {audio_file} ({file_size:.2f} МБ)")
+            else:
+                logger.warning(f"✗ Аудио для модуля {i+1} не найдено: {audio_file}")
+                missing_files.append((i+1, audio_file))
+        else:
+            logger.warning(f"✗ Модуль {i+1} не имеет указанного аудио файла")
+    
+    if missing_files:
+        logger.error(f"Отсутствуют аудио файлы: {missing_files}")
+    else:
+        logger.info("✓ Все аудио файлы на месте")
+    
+    return len(missing_files) == 0
+
+# Основная функция запуска
 async def main():
     """
     Основная функция запуска бота
     """
-    logger.info("Starting tender bot...")
+    logger.info("Starting tender bot with audio accompaniment...")
+    
+    # Проверяем аудио файлы
+    await check_audio_files()
     
     # Проверяем токен
     try:
         bot_info = await bot.get_me()
         logger.info(f"Bot started: @{bot_info.username}")
+        logger.info(f"Audio accompaniment: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} modules")
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
         return
@@ -757,5 +1141,4 @@ async def main():
 
 # Точка входа
 if __name__ == "__main__":
-
     asyncio.run(main())
