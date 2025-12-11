@@ -10,7 +10,7 @@ import json
 import traceback
 
 import aiohttp
-from aiohttp import web
+from aiohttp import web    
 
 # Импорты aiogram
 from aiogram import Bot, Dispatcher, types, F
@@ -41,7 +41,6 @@ shutdown_flag = False
 restart_count = 0
 max_restarts = 100
 restart_delay = 10
-PORT = int(os.environ.get("PORT", 8080))
 
 # Конфигурация системы доступа
 ACCESS_CONFIG = {
@@ -214,12 +213,6 @@ class UserState(StatesGroup):
     admin_grant_access = State()
     admin_revoke_access = State()
 
-# Конфигурация аудиофайлов
-AUDIO_CONFIG = {
-    "base_path": "audio/",
-    "default_format": ".mp3",
-}
-
 # Данные курса с аудио
 MODULES = [
     {
@@ -382,7 +375,6 @@ user_progress = {}
 
 # ==================== МИДЛВАРЬ ДЛЯ ПРОВЕРКИ ДОСТУПА ====================
 
-@dp.message.middleware()
 async def check_access_middleware(handler, event, data):
     """Проверка доступа пользователя"""
     if hasattr(event, 'message'):
@@ -455,6 +447,9 @@ async def check_access_middleware(handler, event, data):
         return
     
     return await handler(event, data)
+
+# Применяем мидлварь
+dp.message.middleware(check_access_middleware)
 
 # ==================== ФИКСИРОВАННЫЕ КЛАВИАТУРЫ ====================
 
@@ -1592,7 +1587,7 @@ async def cmd_broadcast(message: Message, command: CommandObject):
         f"• Всего получателей: {total_users}\n"
         f"• Успешно отправлено: {sent}\n"
         f"• Не удалось отправить: {failed}\n"
-        f"• Процент доставки: {sent/total_users*100:.1f}% если total_users > 0 else 0%\n\n"
+        f"• Процент доставки: {sent/total_users*100:.1f}% if total_users > 0 else 0%\n\n"
         f"<i>Пользователи, которые заблокировали бота или удалили его, не получили сообщение.</i>",
         parse_mode=ParseMode.HTML
     )
@@ -1902,7 +1897,7 @@ async def handle_mark_all_modules(message: Message):
 # ==================== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ ====================
 
 @dp.message()
-async def handle_other_messages(message: Message):
+async def handle_other_messages(message: Message, state: FSMContext):
     """
     Обработчик всех прочих сообщений
     """
@@ -1922,8 +1917,7 @@ async def handle_other_messages(message: Message):
         elif message.text == "✅ Отметить все модули как пройденные":
             await handle_mark_all_modules(message)
         elif message.text == "📝 Пройти тест все равно":
-            from aiogram.fsm.context import FSMContext
-            await start_test_internal(message, FSMContext(dp.storage, message.from_user.id, message.chat.id))
+            await start_test_internal(message, state)
         elif message.text == "📚 Вернуться к обучению":
             await handle_course_menu(message)
         else:
