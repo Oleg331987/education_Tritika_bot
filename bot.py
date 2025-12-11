@@ -10,7 +10,7 @@ import json
 import traceback
 
 import aiohttp
-from aiohttp import web    
+from aiohttp import web
 
 # Импорты aiogram
 from aiogram import Bot, Dispatcher, types, F
@@ -41,6 +41,7 @@ shutdown_flag = False
 restart_count = 0
 max_restarts = 100
 restart_delay = 10
+PORT = int(os.environ.get("PORT", 8080))
 
 # Конфигурация системы доступа
 ACCESS_CONFIG = {
@@ -343,7 +344,7 @@ TEST_QUESTIONS = [
     },
     {
         "id": 2,
-        "question": "Основное отличие закупок по 223-ФЗ от закупок по 44-ФЗ заключается в том, что:",
+        "question": "Основное отличие закупок по 223-ФЗ от закупок по 44-FZ заключается в том, что:",
         "options": {
             "а": "У каждого заказчика по 223-ФЗ есть собственное Положение о закупке",
             "б": "Закупки по 223-ФЗ всегда проводятся в виде аукциона",
@@ -380,7 +381,7 @@ async def check_access_middleware(handler, event, data):
     if hasattr(event, 'message'):
         message = event.message
     elif hasattr(event, 'callback_query'):
-        message = event.callback_query.message
+        message = event.call_query.message
     else:
         return await handler(event, data)
     
@@ -1587,7 +1588,7 @@ async def cmd_broadcast(message: Message, command: CommandObject):
         f"• Всего получателей: {total_users}\n"
         f"• Успешно отправлено: {sent}\n"
         f"• Не удалось отправить: {failed}\n"
-        f"• Процент доставки: {sent/total_users*100:.1f}% if total_users > 0 else 0%\n\n"
+        f"• Процент доставки: {(sent/total_users*100) if total_users > 0 else 0:.1f}%\n\n"
         f"<i>Пользователи, которые заблокировали бота или удалили его, не получили сообщение.</i>",
         parse_mode=ParseMode.HTML
     )
@@ -1989,6 +1990,40 @@ async def send_test_question(message: Message, state: FSMContext, question_index
         parse_mode=ParseMode.HTML
     )
 
+@dp.message(F.text.in_(['а', 'б', 'в', 'г', '⏭ Пропустить', '🏁 Завершить тест']))
+async def handle_test_answer(message: Message, state: FSMContext):
+    """
+    Обработчик ответов на вопросы теста
+    """
+    data = await state.get_data()
+    test_data = data.get("test_data", {})
+    current_question = test_data.get("current_question", 0)
+    
+    if message.text == '🏁 Завершить тест':
+        await finish_test(message, state)
+        return
+    elif message.text == '⏭ Пропустить':
+        # Пропускаем вопрос
+        if 'skipped' not in test_data:
+            test_data['skipped'] = []
+        test_data['skipped'].append(current_question + 1)
+    elif message.text in ['а', 'б', 'в', 'г']:
+        # Сохраняем ответ
+        if 'answers' not in test_data:
+            test_data['answers'] = {}
+        
+        question = TEST_QUESTIONS[current_question]
+        test_data['answers'][question["id"]] = message.text
+    
+    # Переходим к следующему вопросу
+    test_data['current_question'] += 1
+    await state.update_data(test_data=test_data)
+    
+    if test_data['current_question'] < len(TEST_QUESTIONS):
+        await send_test_question(message, state, test_data['current_question'])
+    else:
+        await finish_test(message, state)
+
 async def finish_test(message: Message, state: FSMContext):
     """
     Завершает тест и показывает результаты
@@ -2067,10 +2102,28 @@ async def finish_test(message: Message, state: FSMContext):
     
     await message.answer(
         result_text,
-        parse_mode=ParseMode.HTML
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_keyboard(user_id)
     )
     
     await state.clear()
+
+# ==================== WEB SERVER FOR RENDER.COM ====================
+
+async def web_handler(request):
+    """Обработчик для веб-сервера Render.com"""
+    return web.Response(text="🤖 Бот обучения тендерам работает!")
+
+async def start_web_server():
+    """Запуск веб-сервера для Render.com"""
+    app = web.Application()
+    app.router.add_get('/', web_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    logger.info(f"Веб-сервер запущен на порту {PORT}")
+    return runner
 
 # ==================== ОБРАБОТЧИКИ СИГНАЛОВ ====================
 
@@ -2079,11 +2132,6 @@ def signal_handler(sig, frame):
     global shutdown_flag
     logger.info(f"Получен сигнал {sig}, инициируется graceful shutdown...")
     shutdown_flag = True
-    
-    if bot_instance and dp_instance:
-        asyncio.create_task(shutdown())
-    else:
-        sys.exit(0)
 
 async def shutdown():
     """Корректное завершение работы бота"""
@@ -2104,10 +2152,6 @@ async def shutdown():
         logger.error(f"Ошибка при завершении: {e}")
     finally:
         logger.info("Shutdown завершен")
-        sys.exit(0)
-
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
 
 # ==================== ФУНКЦИИ ДЛЯ ЗАПУСКА ====================
 
@@ -2182,23 +2226,30 @@ async def main():
     """
     global shutdown_flag
     
+    # Устанавливаем обработчики сигналов
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Запускаем веб-сервер для Render.com
+    runner = await start_web_server()
+    
+    # Запускаем бота в фоне
     bot_task = asyncio.create_task(run_bot_with_retries())
     
     try:
+        # Ждем завершения задачи бота или сигнала завершения
         await bot_task
-    except KeyboardInterrupt:
-        logger.info("✅ Получен KeyboardInterrupt, инициируем shutdown...")
-        shutdown_flag = True
-        await shutdown()
+    except asyncio.CancelledError:
+        logger.info("Задача бота отменена")
     except Exception as e:
-        logger.error(f"❌ Необработанное исключение в main: {e}")
+        logger.error(f"Задача бота завершилась с ошибкой: {e}")
     finally:
-        if not bot_task.done():
-            bot_task.cancel()
-            try:
-                await bot_task
-            except asyncio.CancelledError:
-                pass
+        # Останавливаем веб-сервер
+        await runner.cleanup()
+        logger.info("Веб-сервер остановлен")
+        
+        # Вызываем shutdown для бота
+        await shutdown()
 
 if __name__ == "__main__":
     try:
@@ -2208,6 +2259,7 @@ if __name__ == "__main__":
         print(f"💰 Стоимость курса: {ACCESS_CONFIG['price_per_course']} руб.")
         print(f"👑 Администраторов: {len(ACCESS_CONFIG['admin_ids'])}")
         print(f"👥 Пользователей с доступом: {len(access_manager.paid_users)}")
+        print(f"🌐 Веб-сервер на порту: {PORT}")
         print("=" * 60)
         print("Основные команды:")
         print("/start - Начать работу с ботом")
@@ -2222,4 +2274,5 @@ if __name__ == "__main__":
         print("\n\n✅ Бот остановлен пользователем (Ctrl+C)")
     except Exception as e:
         print(f"\n\n❌ Критическая ошибка: {e}")
+        traceback.print_exc()
         sys.exit(1)
