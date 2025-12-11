@@ -10,7 +10,7 @@ from typing import Optional, Dict, List, Set
 import traceback
 import aiohttp
 from aiohttp import web
-from dotenv import load_dotenv  # Добавляем импорт
+from dotenv import load_dotenv
 
 # Загружаем переменные окружения из .env файла
 load_dotenv()
@@ -56,19 +56,17 @@ class AccessControl:
         self.admins: Set[int] = set()
         self.paid_users: Set[int] = set()
         self.load_data()
-        self.init_admins_from_env()  # Инициализируем администраторов из .env
+        self.init_admins_from_env()
     
     def load_data(self):
         """Загружает данные об администраторах и оплативших пользователях"""
         try:
-            # Загружаем администраторов
             if os.path.exists(self.admins_file):
                 with open(self.admins_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.admins = set(data.get("admins", []))
                     logger.info(f"Загружено {len(self.admins)} администраторов из файла")
             
-            # Загружаем оплативших пользователей
             if os.path.exists(self.paid_users_file):
                 with open(self.paid_users_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
@@ -99,7 +97,6 @@ class AccessControl:
                 
                 logger.info(f"Найдены ID администраторов из .env: {admin_ids}")
                 
-                # Добавляем администраторов из .env
                 added_count = 0
                 for admin_id in admin_ids:
                     if self.add_admin(admin_id):
@@ -141,6 +138,7 @@ class AccessControl:
     
     def is_paid_user(self, user_id: int) -> bool:
         """Проверяет, есть ли у пользователя доступ"""
+        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Администраторы автоматически получают доступ к курсу
         result = user_id in self.paid_users or user_id in self.admins
         logger.debug(f"Проверка доступа для {user_id}: {result}")
         return result
@@ -213,12 +211,10 @@ async def shutdown():
     logger.info("Начинаем graceful shutdown...")
     
     try:
-        # Останавливаем polling
         if dp_instance:
             await dp_instance.stop_polling()
             logger.info("Polling успешно остановлен")
         
-        # Закрываем сессию бота
         if bot_instance:
             await bot_instance.session.close()
             logger.info("Сессия бота успешно закрыта")
@@ -229,27 +225,22 @@ async def shutdown():
         logger.info("Shutdown завершен")
         sys.exit(0)
 
-# Регистрация обработчиков сигналов
 signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 
-# Проверка токена бота
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN не установлен! Установите переменную окружения в .env файле.")
     sys.exit(1)
 
-# Инициализация бота с настройками по умолчанию
 bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 
-# Хранилище состояний
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Состояния пользователя
 class UserState(StatesGroup):
     viewing_module = State()
     waiting_feedback = State()
@@ -258,13 +249,11 @@ class UserState(StatesGroup):
     admin_add_user = State()
     admin_remove_user = State()
 
-# Конфигурация аудиофайлов
 AUDIO_CONFIG = {
     "base_path": "audio/",
     "default_format": ".mp3",
 }
 
-# Данные курса с аудио
 MODULES = [
     {
         "id": 1,
@@ -570,7 +559,6 @@ MODULES = [
     }
 ]
 
-# Тестовые вопросы
 TEST_QUESTIONS = [
     {
         "id": 1,
@@ -670,7 +658,6 @@ TEST_QUESTIONS = [
     }
 ]
 
-# Дополнительные материалы
 ADDITIONAL_MATERIALS = {
     "links": {
         "ЕИС": "https://zakupki.gov.ru",
@@ -687,7 +674,6 @@ ADDITIONAL_MATERIALS = {
     }
 }
 
-# Словарь для хранения прогресса пользователей
 user_progress = {}
 
 # =========== КЛАВИАТУРЫ ===========
@@ -695,33 +681,29 @@ def get_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     """
     Создает фиксированную клавиатуру в зависимости от статуса пользователя
     """
+    # ЗАМЕЧАНИЕ: Используем is_paid_user, который теперь включает администраторов
     is_paid = access_control.is_paid_user(user_id)
     
     if is_paid:
-        # Полная клавиатура для оплативших пользователей
+        # Полная клавиатура для всех с доступом (включая администраторов)
         keyboard = ReplyKeyboardMarkup(
             keyboard=[
-                # Первый ряд
                 [
                     KeyboardButton(text="📚 Меню курса"),
                     KeyboardButton(text="🎧 Аудио уроки"),
                 ],
-                # Второй ряд
                 [
                     KeyboardButton(text="📊 Мой прогресс"),
                     KeyboardButton(text="📞 Контакты"),
                 ],
-                # Третий ряд
                 [
                     KeyboardButton(text="🔗 Полезные ссылки"),
                     KeyboardButton(text="🆘 Помощь"),
                 ],
-                # Четвертый ряд
                 [
                     KeyboardButton(text="📝 Пройти тест"),
                     KeyboardButton(text="🏆 Результаты теста")
                 ],
-                # Пятый ряд
                 [
                     KeyboardButton(text="✅ Отметить все модули"),
                     KeyboardButton(text="📥 Скачать чек-лист")
@@ -731,6 +713,10 @@ def get_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
             one_time_keyboard=False,
             input_field_placeholder="Выберите действие..."
         )
+        
+        # Добавляем кнопку админки для администраторов
+        if access_control.is_admin(user_id):
+            keyboard.keyboard.append([KeyboardButton(text="👥 Управление доступом")])
     else:
         # Ограниченная клавиатура для неоплативших
         keyboard = ReplyKeyboardMarkup(
@@ -817,25 +803,21 @@ def get_admin_management_keyboard() -> ReplyKeyboardMarkup:
     )
     return keyboard
 
-# Клавиатура для навигации по урокам (только для оплативших)
 def get_lesson_navigation_keyboard(current_index: int, total_modules: int) -> ReplyKeyboardMarkup:
     """
     Создает клавиатуру для навигации по урокам
     """
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            # Первый ряд - навигация
             [
                 KeyboardButton(text="⬅️ Предыдущий урок"),
                 KeyboardButton(text=f"📖 {current_index+1}/{total_modules}"),
                 KeyboardButton(text="Следующий урок ➡️"),
             ],
-            # Второй ряд - действия с уроком
             [
                 KeyboardButton(text="🎧 Прослушать аудио"),
                 KeyboardButton(text="✅ Отметить пройденным"),
             ],
-            # Третий ряд - возврат
             [
                 KeyboardButton(text="📚 Меню курса"),
                 KeyboardButton(text="📊 Мой прогресс"),
@@ -848,14 +830,12 @@ def get_lesson_navigation_keyboard(current_index: int, total_modules: int) -> Re
     )
     return keyboard
 
-# Клавиатура для теста (только для оплативших)
 def get_test_keyboard(question_num: int, total_questions: int) -> ReplyKeyboardMarkup:
     """
     Создает клавиатуру для прохождения теста
     """
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            # Варианты ответов
             [
                 KeyboardButton(text="а"),
                 KeyboardButton(text="б"),
@@ -864,7 +844,6 @@ def get_test_keyboard(question_num: int, total_questions: int) -> ReplyKeyboardM
                 KeyboardButton(text="в"),
                 KeyboardButton(text="г"),
             ],
-            # Навигация
             [
                 KeyboardButton(text="⏭ Пропустить"),
                 KeyboardButton(text=f"📝 {question_num}/{total_questions}"),
@@ -880,21 +859,18 @@ def get_test_keyboard(question_num: int, total_questions: int) -> ReplyKeyboardM
     )
     return keyboard
 
-# Функция отображения списка уроков (только для оплативших)
 def get_lessons_list_keyboard() -> ReplyKeyboardMarkup:
     """
     Создает клавиатуру со списком всех уроков
     """
     keyboard_rows = []
     
-    # Добавляем уроки по одному в ряд
     for module in MODULES:
         audio_icon = "🎧 " if module.get("has_audio", False) else ""
         keyboard_rows.append([
             KeyboardButton(text=f"{module['emoji']} {audio_icon}День {module['day']}: {module['title'][:20]}")
         ])
     
-    # Добавляем кнопки возврата
     keyboard_rows.append([
         KeyboardButton(text="📊 Мой прогресс"),
         KeyboardButton(text="🔙 Главное меню")
@@ -908,7 +884,6 @@ def get_lessons_list_keyboard() -> ReplyKeyboardMarkup:
     )
     return keyboard
 
-# Клавиатура после теста
 def get_after_test_keyboard() -> ReplyKeyboardMarkup:
     """
     Создает клавиатуру после завершения теста
@@ -930,7 +905,7 @@ def get_after_test_keyboard() -> ReplyKeyboardMarkup:
     )
     return keyboard
 
-# Вспомогательные функции для работы с аудио
+# =========== АУДИО МЕНЕДЖЕР ===========
 class AudioManager:
     """Менеджер для работы с аудиофайлами"""
     
@@ -942,7 +917,6 @@ class AudioManager:
             audio_file = module.get("audio_file")
             if audio_file:
                 audio_path = os.path.join(AUDIO_CONFIG["base_path"], audio_file)
-                # Проверяем существование файла
                 if os.path.exists(audio_path):
                     return audio_path
                 else:
@@ -980,17 +954,14 @@ class AudioManager:
             module = MODULES[module_index]
             audio_info = AudioManager.get_audio_info(module_index)
             
-            # Создаем объект файла
             audio_file = FSInputFile(audio_path)
             
-            # Формируем описание
             caption = f"🎧 <b>{module['emoji']} Аудио-сопровождение к модулю {module_index + 1}</b>\n"
             caption += f"<b>{module['title']}</b>\n\n"
             caption += f"⏱ <b>Длительность:</b> {audio_info['duration']//60}:{audio_info['duration']%60:02d}\n"
             caption += f"📚 <b>Описание:</b> {audio_info['title']}\n\n"
             caption += "<i>Рекомендуем прослушать аудио для лучшего усвоения материала</i>"
             
-            # Отправляем аудио
             await bot.send_audio(
                 chat_id=chat_id,
                 audio=audio_file,
@@ -1005,7 +976,7 @@ class AudioManager:
             logger.error(f"Error sending audio for module {module_index}: {e}")
             return False
 
-# Функция отображения модуля
+# =========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===========
 async def show_module(message: Message, module_index: int, state: FSMContext):
     """
     Показывает выбранный модуль и автоматически отправляет аудио сопровождение
@@ -1013,7 +984,7 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
     module = MODULES[module_index]
     user_id = message.from_user.id
     
-    # Проверяем доступ
+    # ЗАМЕЧАНИЕ: Теперь администраторы автоматически получают доступ через is_paid_user
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к этому модулю. Для получения доступа оплатите подписку.",
@@ -1021,19 +992,15 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
         )
         return
     
-    # Обновляем состояние
     await state.set_state(UserState.viewing_module)
     await state.update_data(current_module=module_index)
     
-    # Обновляем последний просмотренный модуль
     if user_id in user_progress:
         user_progress[user_id]['last_module'] = module_index
     
-    # Формируем сообщение
     module_text = f"{module['content']}\n\n"
     module_text += f"<b>📝 Практическое задание:</b> {module['task']}"
     
-    # Проверяем, отмечен ли модуль как пройденный
     is_completed = False
     if user_id in user_progress:
         is_completed = (module_index + 1) in user_progress[user_id].get('completed_modules', [])
@@ -1041,14 +1008,12 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
     if not is_completed:
         module_text += "\n\n✅ <b>Не забудьте отметить модуль как пройденный после изучения!</b>"
     
-    # Отправляем текст модуля с клавиатурой навигации
     await message.answer(
         module_text,
         reply_markup=get_lesson_navigation_keyboard(module_index, len(MODULES)),
         parse_mode=ParseMode.HTML
     )
     
-    # Автоматически отправляем аудио сопровождение
     audio_sent = await AudioManager.send_module_audio(message.chat.id, module_index)
     
     if not audio_sent and module.get("has_audio", False):
@@ -1057,14 +1022,13 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
             parse_mode=ParseMode.HTML
         )
 
-# Функции для тестирования
 async def start_test_internal(message: Message, state: FSMContext):
     """
     Внутренняя функция запуска теста
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
+    # ЗАМЕЧАНИЕ: Теперь администраторы автоматически получают доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к тесту. Для получения доступа оплатите подписку.",
@@ -1072,10 +1036,9 @@ async def start_test_internal(message: Message, state: FSMContext):
         )
         return
     
-    # Инициализируем данные теста
     test_data = {
         "current_question": 0,
-        "answers": {},  # вопрос_id -> ответ
+        "answers": {},
         "start_time": datetime.now().isoformat(),
         "completed": False,
         "skipped": []
@@ -1084,7 +1047,6 @@ async def start_test_internal(message: Message, state: FSMContext):
     await state.set_state(UserState.taking_test)
     await state.update_data(test_data=test_data)
     
-    # Отправляем первый вопрос
     await send_test_question(message, state, 0)
 
 async def send_test_question(message: Message, state: FSMContext, question_index: int = None):
@@ -1103,17 +1065,14 @@ async def send_test_question(message: Message, state: FSMContext, question_index
     
     question = TEST_QUESTIONS[question_index]
     
-    # Формируем текст вопроса
     question_text = f"<b>📝 Вопрос {question_index + 1} из {len(TEST_QUESTIONS)}</b>\n\n"
     question_text += f"{question['question']}\n\n"
     
-    # Добавляем варианты ответов
     for option_key, option_text in question["options"].items():
         question_text += f"<b>{option_key})</b> {option_text}\n"
     
     question_text += "\n<i>Выберите вариант ответа (а, б, в, г)</i>"
     
-    # Обновляем текущий вопрос в состоянии
     test_data["current_question"] = question_index
     await state.update_data(test_data=test_data)
     
@@ -1129,7 +1088,6 @@ async def process_test_answer(message: Message, state: FSMContext, answer: str):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к тесту. Для получения доступа оплатите подписку.",
@@ -1144,12 +1102,10 @@ async def process_test_answer(message: Message, state: FSMContext, answer: str):
     if current_question >= len(TEST_QUESTIONS):
         return
     
-    # Сохраняем ответ
     question = TEST_QUESTIONS[current_question]
     test_data["answers"][question["id"]] = answer
     await state.update_data(test_data=test_data)
     
-    # Переходим к следующему вопросу
     next_question = current_question + 1
     
     if next_question < len(TEST_QUESTIONS):
@@ -1163,14 +1119,11 @@ async def send_final_summary(message: Message):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         return
     
-    # Отправляем финальное аудио (модуль 6)
-    final_audio_sent = await AudioManager.send_module_audio(message.chat.id, 5)  # 5 = index 5 = module 6
+    final_audio_sent = await AudioManager.send_module_audio(message.chat.id, 5)
     
-    # Формируем итоги курса
     course_summary = """<b>✅ Итоги курса:</b>
 
 После прохождения вы знаете:
@@ -1228,13 +1181,11 @@ async def send_final_summary(message: Message):
 
 <b>🎯 Теперь ваша очередь действовать! Первый шаг — самый важный!</b>"""
     
-    # Отправляем итоги курса
     await message.answer(
         course_summary,
         parse_mode=ParseMode.HTML
     )
     
-    # Если аудио не удалось отправить, сообщаем об этом
     if not final_audio_sent:
         await message.answer(
             "🎧 <b>Примечание:</b> Финальное аудио с итогами курса временно недоступно. Вы можете прослушать его позже через меню курса.",
@@ -1247,7 +1198,6 @@ async def finish_test(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к тесту. Для получения доступа оплатите подписку.",
@@ -1258,7 +1208,6 @@ async def finish_test(message: Message, state: FSMContext):
     data = await state.get_data()
     test_data = data.get("test_data", {})
     
-    # Вычисляем результаты
     correct_answers = 0
     total_questions = len(TEST_QUESTIONS)
     results = []
@@ -1281,10 +1230,8 @@ async def finish_test(message: Message, state: FSMContext):
             "is_correct": is_correct
         })
     
-    # Вычисляем процент
     percentage = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
     
-    # Определяем оценку
     if correct_answers >= 7:
         grade = "Отлично! Вы прекрасно усвоили материал курса и готовы к первым шагам в мире тендеров."
     elif correct_answers >= 5:
@@ -1292,7 +1239,6 @@ async def finish_test(message: Message, state: FSMContext):
     else:
         grade = "Не переживайте! Вернитесь к материалам экспресс-курса и уделите внимание основам (модули 1-3). Практика и повторение — ключ к успеху!"
     
-    # Сохраняем результаты в прогресс пользователя
     if user_id not in user_progress:
         user_progress[user_id] = {}
     
@@ -1308,7 +1254,6 @@ async def finish_test(message: Message, state: FSMContext):
     user_progress[user_id]["test_results"] = user_progress[user_id].get("test_results", [])
     user_progress[user_id]["test_results"].append(test_result)
     
-    # Формируем текст результатов
     result_text = f"""
 <b>🏆 Результаты теста</b>
 
@@ -1333,19 +1278,16 @@ async def finish_test(message: Message, state: FSMContext):
     result_text += "\n• Практикуйтесь на реальных тендерах"
     result_text += "\n• Задавайте вопросы в поддержку"
     
-    # Отправляем результаты теста
     await message.answer(
         result_text,
         parse_mode=ParseMode.HTML
     )
     
-    # Отправляем финальное аудио и итоги курса
     await send_final_summary(message)
     
-    # Сбрасываем состояние теста
     await state.clear()
 
-# =========== ОБРАБОТЧИКИ КОМАНД ===========
+# =========== КОМАНДЫ ===========
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """
@@ -1354,7 +1296,6 @@ async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
     
-    # Инициализируем прогресс пользователя
     if user_id not in user_progress:
         user_progress[user_id] = {
             'start_date': datetime.now().isoformat(),
@@ -1365,13 +1306,43 @@ async def cmd_start(message: Message, state: FSMContext):
             'test_results': []
         }
     
-    # Проверяем статус пользователя
     is_paid = access_control.is_paid_user(user_id)
     is_admin = access_control.is_admin(user_id)
     
     if is_admin:
         # Администратор
-        welcome_text = f"""
+        admin_badge = " 👑"
+        
+        if is_paid:
+            # Администратор с полным доступом
+            welcome_text = f"""
+<b>👑 Привет, Администратор {user_name}!</b>
+
+Добро пожаловать в бот с <b>полным доступом ко всем функциям</b>!
+
+<b>Ваши права:</b>
+• 📚 Полный доступ ко всем урокам курса
+• 🎧 Прослушивание всех аудио-уроков
+• 📝 Прохождение финального теста
+• 📥 Скачивание чек-листа
+• 👥 Управление доступом пользователей
+• 📊 Просмотр статистики
+• 📢 Рассылка сообщений
+
+<b>Используйте кнопки внизу для навигации:</b>
+• 📚 Меню курса - доступ ко всем урокам
+• 🎧 Аудио уроки - прослушивание аудио
+• 📝 Пройти тест - проверка знаний
+• 👥 Управление доступом - админ-панель
+
+<b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение.
+
+<b>Начните обучение или управление прямо сейчас!</b>
+"""
+            keyboard = get_main_keyboard(user_id)
+        else:
+            # Администратор без доступа к курсу (теоретически невозможно после исправления)
+            welcome_text = f"""
 <b>👑 Привет, Администратор {user_name}!</b>
 
 Добро пожаловать в панель управления ботом!
@@ -1384,12 +1355,8 @@ async def cmd_start(message: Message, state: FSMContext):
 
 <b>Используйте админ-панель для управления:</b>
 """
-        await message.answer(
-            welcome_text,
-            reply_markup=get_admin_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
-        
+            keyboard = get_admin_keyboard()
+            
     elif is_paid:
         # Оплативший пользователь
         welcome_text = f"""
@@ -1408,11 +1375,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
 <b>Используйте кнопки внизу для навигации!</b>
 """
-        await message.answer(
-            welcome_text,
-            reply_markup=get_main_keyboard(user_id),
-            parse_mode=ParseMode.HTML
-        )
+        keyboard = get_main_keyboard(user_id)
         
     else:
         # Неоплативший пользователь
@@ -1439,11 +1402,13 @@ Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 
 <b>После оплаты администратор добавит вас в систему!</b>
 """
-        await message.answer(
-            welcome_text,
-            reply_markup=get_main_keyboard(user_id),
-            parse_mode=ParseMode.HTML
-        )
+        keyboard = get_main_keyboard(user_id)
+    
+    await message.answer(
+        welcome_text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML
+    )
     
     await state.clear()
 
@@ -1589,10 +1554,9 @@ async def handle_list_users(message: Message):
         )
         return
     
-    # Формируем сообщение
     users_text = "<b>📋 Пользователи с доступом:</b>\n\n"
     
-    for i, user_id in enumerate(paid_users[:50], 1):  # Показываем первые 50
+    for i, user_id in enumerate(paid_users[:50], 1):
         is_admin = user_id in admins
         admin_badge = " 👑" if is_admin else ""
         users_text += f"{i}. ID: <code>{user_id}</code>{admin_badge}\n"
@@ -1663,7 +1627,6 @@ async def handle_add_admin_start(message: Message, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
     
-    # Сохраняем состояние для обработки следующего сообщения
     await state.set_state(UserState.admin_add_user)
     await state.update_data(is_admin=True)
 
@@ -1699,7 +1662,6 @@ async def handle_remove_admin_start(message: Message, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
     
-    # Сохраняем состояние для обработки следующего сообщения
     await state.set_state(UserState.admin_remove_user)
     await state.update_data(is_admin=True)
 
@@ -1746,12 +1708,10 @@ async def handle_statistics(message: Message):
         )
         return
     
-    # Собираем статистику
     total_users = len(user_progress)
     paid_users = len(access_control.get_all_paid_users())
     admins = len(access_control.get_all_admins())
     
-    # Статистика по прогрессу
     completed_courses = 0
     active_users = 0
     
@@ -1813,7 +1773,6 @@ async def handle_broadcast_start(message: Message, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
     
-    # Сохраняем состояние для обработки следующего сообщения
     await state.update_data(broadcast=True)
 
 @dp.message(F.text == "⚙️ Настройки")
@@ -1881,19 +1840,15 @@ async def handle_admin_add_user_process(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    # Проверяем, является ли это добавлением администратора
     data = await state.get_data()
     is_adding_admin = data.get('is_admin', False)
     
     try:
-        # Пробуем получить ID пользователя
         target_id = None
         
         if target.isdigit():
-            # Если это числовой ID
             target_id = int(target)
         elif target.startswith('@'):
-            # Если это username, пытаемся получить ID через бота
             try:
                 user = await bot.get_chat(target)
                 target_id = user.id
@@ -1913,7 +1868,6 @@ async def handle_admin_add_user_process(message: Message, state: FSMContext):
             return
         
         if is_adding_admin:
-            # Добавление администратора
             if access_control.add_admin(target_id):
                 await message.answer(
                     f"✅ Пользователь ID: <code>{target_id}</code> назначен администратором!",
@@ -1921,7 +1875,6 @@ async def handle_admin_add_user_process(message: Message, state: FSMContext):
                     reply_markup=get_admin_management_keyboard()
                 )
                 
-                # Уведомляем нового администратора
                 try:
                     await bot.send_message(
                         target_id,
@@ -1939,7 +1892,6 @@ async def handle_admin_add_user_process(message: Message, state: FSMContext):
                     reply_markup=get_admin_management_keyboard()
                 )
         else:
-            # Добавление обычного пользователя
             if access_control.add_paid_user(target_id):
                 await message.answer(
                     f"✅ Пользователю ID: <code>{target_id}</code> предоставлен доступ к курсу!",
@@ -1947,7 +1899,6 @@ async def handle_admin_add_user_process(message: Message, state: FSMContext):
                     reply_markup=get_access_management_keyboard()
                 )
                 
-                # Уведомляем пользователя
                 try:
                     await bot.send_message(
                         target_id,
@@ -1995,19 +1946,15 @@ async def handle_admin_remove_user_process(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    # Проверяем, является ли это удалением администратора
     data = await state.get_data()
     is_removing_admin = data.get('is_admin', False)
     
     try:
-        # Пробуем получить ID пользователя
         target_id = None
         
         if target.isdigit():
-            # Если это числовой ID
             target_id = int(target)
         elif target.startswith('@'):
-            # Если это username, пытаемся получить ID через бота
             try:
                 user = await bot.get_chat(target)
                 target_id = user.id
@@ -2027,7 +1974,6 @@ async def handle_admin_remove_user_process(message: Message, state: FSMContext):
             return
         
         if is_removing_admin:
-            # Удаление администратора
             if target_id == user_id:
                 await message.answer(
                     "❌ <b>Вы не можете удалить себя из администраторов!</b>",
@@ -2049,7 +1995,6 @@ async def handle_admin_remove_user_process(message: Message, state: FSMContext):
                     reply_markup=get_admin_management_keyboard()
                 )
         else:
-            # Удаление обычного пользователя
             if access_control.remove_paid_user(target_id):
                 await message.answer(
                     f"✅ У пользователя ID: <code>{target_id}</code> отозван доступ к курсу!",
@@ -2077,7 +2022,7 @@ async def handle_admin_remove_user_process(message: Message, state: FSMContext):
     
     await state.clear()
 
-# =========== ОБРАБОТЧИКИ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ ===========
+# =========== ОБРАБОТЧИКИ ДЛЯ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ ===========
 @dp.message(F.text == "🔓 Получить доступ")
 async def handle_get_access(message: Message):
     """
@@ -2156,7 +2101,7 @@ Email: {ADDITIONAL_MATERIALS['contacts']['email']}
         reply_markup=get_main_keyboard(user_id)
     )
 
-# =========== ЗАЩИЩЕННЫЕ ОБРАБОТЧИКИ (только для оплативших) ===========
+# =========== ОБРАБОТЧИКИ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ С ДОСТУПОМ (ВКЛЮЧАЯ АДМИНИСТРАТОРОВ) ===========
 @dp.message(F.text == "📚 Меню курса")
 async def handle_course_menu(message: Message):
     """
@@ -2164,7 +2109,7 @@ async def handle_course_menu(message: Message):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
+    # ЗАМЕЧАНИЕ: Теперь is_paid_user включает администраторов
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к курсу. Для получения доступа оплатите подписку.",
@@ -2178,7 +2123,6 @@ async def handle_course_menu(message: Message):
         audio_icon = "🎧 " if module.get("has_audio", False) else ""
         lessons_text += f"{module['emoji']} {audio_icon}<b>День {module['day']}:</b> {module['title']}\n"
         
-        # Проверяем прогресс
         if user_id in user_progress:
             if i in user_progress[user_id].get('completed_modules', []):
                 lessons_text += "   ✅ Пройден\n"
@@ -2200,7 +2144,6 @@ async def handle_audio_lessons(message: Message):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к аудио урокам. Для получения доступа оплатите подписку.",
@@ -2237,7 +2180,6 @@ async def handle_my_progress(message: Message):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к курсу. Для получения доступа оплатите подписку.",
@@ -2257,17 +2199,17 @@ async def handle_my_progress(message: Message):
     total = len(MODULES)
     percentage = (completed / total) * 100 if total > 0 else 0
     
-    # Аудио статистика
     audio_listened = len(progress.get('audio_listened', []))
     audio_total = sum(1 for module in MODULES if module.get("has_audio", False))
     audio_percentage = (audio_listened / audio_total * 100) if audio_total > 0 else 0
     
-    # Статистика тестов
     test_results = progress.get('test_results', [])
     last_test = test_results[-1] if test_results else None
     
+    admin_badge = " 👑" if access_control.is_admin(user_id) else ""
+    
     progress_text = f"""
-<b>📊 Ваш прогресс в курсе:</b>
+<b>📊 Ваш прогресс в курсе{admin_badge}:</b>
 
 👤 <b>Имя:</b> {progress.get('name', 'Не указано')}
 📅 <b>Дата начала:</b> {progress['start_date'][:10]}
@@ -2414,7 +2356,7 @@ async def handle_help(message: Message):
         reply_markup=get_main_keyboard(user_id)
     )
 
-# Обработчики для теста
+# =========== ТЕСТ ===========
 @dp.message(F.text == "📝 Пройти тест")
 async def handle_start_test(message: Message, state: FSMContext):
     """
@@ -2422,7 +2364,6 @@ async def handle_start_test(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к тесту. Для получения доступа оплатите подписку.",
@@ -2430,13 +2371,11 @@ async def handle_start_test(message: Message, state: FSMContext):
         )
         return
     
-    # Проверяем, прошел ли пользователь все модули
     if user_id in user_progress:
         completed = len(user_progress[user_id].get('completed_modules', []))
         total = len(MODULES)
         
         if completed < total:
-            # Создаем клавиатуру с опциями
             keyboard = ReplyKeyboardMarkup(
                 keyboard=[
                     [
@@ -2464,7 +2403,6 @@ async def handle_start_test(message: Message, state: FSMContext):
             )
             return
     
-    # Если все модули пройдены или пользователь выбрал "Пройти тест все равно"
     await start_test_confirm(message)
 
 async def start_test_confirm(message: Message):
@@ -2529,7 +2467,6 @@ async def handle_force_start_test(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к тесту. Для получения доступа оплатите подписку.",
@@ -2558,7 +2495,6 @@ async def handle_mark_all_completed(message: Message):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к курсу. Для получения доступа оплатите подписку.",
@@ -2576,10 +2512,8 @@ async def handle_mark_all_completed(message: Message):
             'test_results': []
         }
     
-    # Отмечаем все модули как пройденные
     user_progress[user_id]['completed_modules'] = list(range(1, len(MODULES) + 1))
     
-    # Отмечаем все аудио как прослушанные
     for i in range(1, len(MODULES) + 1):
         if i not in user_progress[user_id].get('audio_listened', []):
             user_progress[user_id].setdefault('audio_listened', []).append(i)
@@ -2599,7 +2533,6 @@ async def handle_test_results(message: Message):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к результатам теста. Для получения доступа оплатите подписку.",
@@ -2626,7 +2559,6 @@ async def handle_test_results(message: Message):
         )
         return
     
-    # Показываем последний результат
     last_test = test_results[-1]
     
     result_text = f"""
@@ -2646,10 +2578,9 @@ async def handle_test_results(message: Message):
         result_text += f"\nВаш ответ: <b>{result['user_answer'] if result['user_answer'] else 'нет ответа'}</b>"
         result_text += f"\nПравильный: <b>{result['correct_text']}</b>\n"
     
-    # Показываем историю
     if len(test_results) > 1:
         result_text += f"\n<b>📊 История тестов:</b> {len(test_results)} попыток"
-        for i, test in enumerate(test_results[-5:], 1):  # Последние 5 попыток
+        for i, test in enumerate(test_results[-5:], 1):
             date_str = datetime.fromisoformat(test['date']).strftime('%d.%m')
             result_text += f"\n{i}. {date_str}: {test['correct_answers']}/{test['total_questions']} ({test['percentage']:.1f}%)"
     
@@ -2661,7 +2592,7 @@ async def handle_test_results(message: Message):
         parse_mode=ParseMode.HTML
     )
 
-# Обработчики ответов на тест
+# =========== ОТВЕТЫ НА ТЕСТ ===========
 @dp.message(F.text.in_({"а", "б", "в", "г"}), UserState.taking_test)
 async def handle_test_answer(message: Message, state: FSMContext):
     """
@@ -2676,7 +2607,6 @@ async def handle_skip_question(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к тесту. Для получения доступа оплатите подписку.",
@@ -2688,7 +2618,6 @@ async def handle_skip_question(message: Message, state: FSMContext):
     test_data = data.get("test_data", {})
     current_question = test_data.get("current_question", 0)
     
-    # Переходим к следующему вопросу
     next_question = current_question + 1
     
     if next_question < len(TEST_QUESTIONS):
@@ -2707,7 +2636,6 @@ async def handle_finish_test_early(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к тесту. Для получения доступа оплатите подписку.",
@@ -2745,7 +2673,7 @@ async def handle_back_to_learning(message: Message):
         parse_mode=ParseMode.HTML
     )
 
-# Обработчик скачивания чек-листа
+# =========== СКАЧИВАНИЕ ЧЕК-ЛИСТА ===========
 @dp.message(F.text == "📥 Скачать чек-лист")
 async def handle_download_checklist(message: Message):
     """
@@ -2753,7 +2681,6 @@ async def handle_download_checklist(message: Message):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к чек-листу. Для получения доступа оплатите подписку.",
@@ -2762,11 +2689,9 @@ async def handle_download_checklist(message: Message):
         return
     
     try:
-        # Путь к файлу чек-листа
         checklist_path = "Чек-лист -Первые 10 шагов в тендерах-.docx"
         
         if not os.path.exists(checklist_path):
-            # Если файла нет локально, можно попробовать скачать или использовать альтернативу
             await message.answer(
                 "❌ Файл чек-листа временно недоступен.\n\n"
                 "Вы можете использовать текстовую версию чек-листа из 6 модуля курса.",
@@ -2774,10 +2699,11 @@ async def handle_download_checklist(message: Message):
             )
             return
         
-        # Отправляем файл как документ
         document = FSInputFile(checklist_path)
         
-        caption = """✅ <b>Чек-лист "Первые 10 шагов в тендерах"</b>
+        admin_badge = " (Администратор)" if access_control.is_admin(user_id) else ""
+        
+        caption = f"""✅ <b>Чек-лист "Первые 10 шагов в тендерах"{admin_badge}</b>
 
 📋 <b>Что внутри:</b>
 • Пошаговый план для старта в течение недели
@@ -2809,7 +2735,7 @@ async def handle_download_checklist(message: Message):
             parse_mode=ParseMode.HTML
         )
 
-# Обработчик выбора урока из списка
+# =========== ВЫБОР УРОКА ===========
 @dp.message(F.text.startswith(("📚", "🏛️", "🏢", "💼", "🚀", "🏆")))
 async def handle_lesson_selection(message: Message, state: FSMContext):
     """
@@ -2817,7 +2743,6 @@ async def handle_lesson_selection(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к урокам. Для получения доступа оплатите подписку.",
@@ -2826,7 +2751,6 @@ async def handle_lesson_selection(message: Message, state: FSMContext):
         return
     
     try:
-        # Ищем модуль по тексту кнопки
         for i, module in enumerate(MODULES):
             audio_icon = "🎧 " if module.get("has_audio", False) else ""
             button_text = f"{module['emoji']} {audio_icon}День {module['day']}: {module['title'][:20]}"
@@ -2835,7 +2759,6 @@ async def handle_lesson_selection(message: Message, state: FSMContext):
                 await show_module(message, i, state)
                 return
         
-        # Если урок не найден
         await message.answer(
             "❌ Урок не найден. Выберите урок из списка.",
             reply_markup=get_lessons_list_keyboard()
@@ -2847,7 +2770,7 @@ async def handle_lesson_selection(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(user_id)
         )
 
-# Обработчики кнопок навигации в уроке
+# =========== НАВИГАЦИЯ В УРОКЕ ===========
 @dp.message(F.text == "⬅️ Предыдущий урок")
 async def handle_prev_lesson(message: Message, state: FSMContext):
     """
@@ -2855,7 +2778,6 @@ async def handle_prev_lesson(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к урокам. Для получения доступа оплатите подписку.",
@@ -2881,7 +2803,6 @@ async def handle_next_lesson(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к урокам. Для получения доступа оплатите подписку.",
@@ -2910,7 +2831,6 @@ async def handle_listen_audio(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к аудио урокам. Для получения доступа оплатите подписку.",
@@ -2925,8 +2845,6 @@ async def handle_listen_audio(message: Message, state: FSMContext):
         audio_sent = await AudioManager.send_module_audio(message.chat.id, current_module)
         
         if audio_sent:
-            # Отмечаем аудио как прослушанное
-            user_id = message.from_user.id
             if user_id in user_progress:
                 if current_module + 1 not in user_progress[user_id].get('audio_listened', []):
                     user_progress[user_id].setdefault('audio_listened', []).append(current_module + 1)
@@ -2953,7 +2871,6 @@ async def handle_complete_lesson(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к курсу. Для получения доступа оплатите подписку.",
@@ -2983,7 +2900,6 @@ async def handle_complete_lesson(message: Message, state: FSMContext):
                 reply_markup=get_lesson_navigation_keyboard(current_module, len(MODULES))
             )
             
-            # Проверяем, пройдены ли все модули
             completed = len(user_progress[user_id]['completed_modules'])
             total = len(MODULES)
             
@@ -3009,6 +2925,7 @@ async def handle_complete_lesson(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(user_id)
         )
 
+# =========== ВОЗВРАТ В ГЛАВНОЕ МЕНЮ ===========
 @dp.message(F.text.in_({"🔙 Назад в главное меню", "🔙 Главное меню", "🔙 Назад в админку", "🔙 Назад"}))
 async def handle_back_to_main(message: Message, state: FSMContext):
     """
@@ -3017,11 +2934,20 @@ async def handle_back_to_main(message: Message, state: FSMContext):
     user_id = message.from_user.id
     await state.clear()
     
+    # ЗАМЕЧАНИЕ: Теперь администраторы автоматически получают полный доступ
     if access_control.is_admin(user_id):
-        await cmd_admin(message)
+        # Администратор получает полный доступ ко всем функциям
+        await message.answer(
+            "<b>👑 Возвращаемся в главное меню</b>\n\n"
+            "Вы имеете полный доступ ко всем функциям бота как администратор.",
+            reply_markup=get_main_keyboard(user_id),
+            parse_mode=ParseMode.HTML
+        )
     elif access_control.is_paid_user(user_id):
+        # Обычный оплативший пользователь
         await cmd_start(message, state)
     else:
+        # Пользователь без доступа
         await cmd_start(message, state)
 
 # =========== КОМАНДЫ ОТЛАДКИ ===========
@@ -3038,6 +2964,7 @@ async def cmd_checkadmins(message: Message):
 
 <b>Ваш ID:</b> <code>{user_id}</code>
 <b>Вы администратор:</b> {'✅ Да' if access_control.is_admin(user_id) else '❌ Нет'}
+<b>Вы имеете доступ к курсу:</b> {'✅ Да' if access_control.is_paid_user(user_id) else '❌ Нет'}
 
 <b>Список всех администраторов:</b>
 """
@@ -3050,7 +2977,6 @@ async def cmd_checkadmins(message: Message):
     
     check_text += f"\n<b>Всего администраторов:</b> {len(admins)}"
     
-    # Также покажем переменные окружения (безопасно)
     initial_admins_env = os.getenv('INITIAL_ADMINS', 'Не установлена')
     check_text += f"\n<b>INITIAL_ADMINS из .env:</b> {initial_admins_env}"
     
@@ -3077,7 +3003,12 @@ async def cmd_debug(message: Message):
 
 <b>Доступ:</b>
 • Администратор: {access_control.is_admin(user_id)}
-• Оплативший: {access_control.is_paid_user(user_id)}
+• Оплативший/имеющий доступ: {access_control.is_paid_user(user_id)}
+
+<b>Проверка логики:</b>
+• user_id in admins: {user_id in access_control.admins}
+• user_id in paid_users: {user_id in access_control.paid_users}
+• is_paid_user результат: {access_control.is_paid_user(user_id)}
 
 <b>Переменные окружения:</b>
 • BOT_TOKEN: {'✅ Установлен' if BOT_TOKEN else '❌ Не установлен'}
@@ -3137,7 +3068,6 @@ async def cmd_audio(message: Message, command: CommandObject):
     """
     user_id = message.from_user.id
     
-    # Проверяем доступ
     if not access_control.is_paid_user(user_id):
         await message.answer(
             "❌ У вас нет доступа к аудио урокам. Для получения доступа оплатите подписку.",
@@ -3156,7 +3086,6 @@ async def cmd_audio(message: Message, command: CommandObject):
             audio_sent = await AudioManager.send_module_audio(message.chat.id, module_index)
             
             if audio_sent:
-                # Отмечаем аудио как прослушанное
                 if module_num not in user_progress[user_id].get('audio_listened', []):
                     user_progress[user_id].setdefault('audio_listened', []).append(module_num)
                 
@@ -3264,10 +3193,8 @@ async def handle_other_messages(message: Message, state: FSMContext):
     """
     user_id = message.from_user.id
     
-    # Проверяем, не является ли это сообщением для рассылки
     data = await state.get_data()
     if data.get('broadcast'):
-        # Это сообщение для рассылки
         if access_control.is_admin(user_id):
             paid_users = access_control.get_all_paid_users()
             
@@ -3312,11 +3239,8 @@ async def handle_other_messages(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    # Проверяем доступ для остальных сообщений
     if message.content_type == ContentType.TEXT:
-        # Проверяем, имеет ли пользователь доступ
         if access_control.is_paid_user(user_id):
-            # Пользователь с доступом
             await message.answer(
                 "🤖 Я бот для обучения тендерам с аудио сопровождением!\n\n"
                 "Используйте кнопки внизу для навигации или команды:\n"
@@ -3334,7 +3258,6 @@ async def handle_other_messages(message: Message, state: FSMContext):
                 reply_markup=get_main_keyboard(user_id)
             )
         else:
-            # Пользователь без доступа
             await message.answer(
                 "🔒 <b>У вас нет доступа к полному функционалу бота</b>\n\n"
                 "Для получения доступа к курсу:\n"
@@ -3362,7 +3285,7 @@ async def check_audio_files():
         if audio_file:
             audio_path = os.path.join(AUDIO_CONFIG["base_path"], audio_file)
             if os.path.exists(audio_path):
-                file_size = os.path.getsize(audio_path) / (1024 * 1024)  # в МБ
+                file_size = os.path.getsize(audio_path) / (1024 * 1024)
                 logger.info(f"✓ Аудио для урока {i+1}: {audio_file} ({file_size:.2f} МБ)")
             else:
                 logger.warning(f"✗ Аудио для урока {i+1} не найдено: {audio_file}")
@@ -3382,7 +3305,7 @@ async def check_checklist_file():
     checklist_path = "Чек-лист -Первые 10 шагов в тендерах-.docx"
     
     if os.path.exists(checklist_path):
-        file_size = os.path.getsize(checklist_path) / 1024  # в КБ
+        file_size = os.path.getsize(checklist_path) / 1024
         logger.info(f"✓ Чек-лист найден: {checklist_path} ({file_size:.1f} КБ)")
         return True
     else:
@@ -3433,24 +3356,20 @@ async def run_bot_with_retries():
             logger.info(f"🚀 Запуск бота (попытка {restart_count + 1}/{max_restarts})...")
             logger.info(f"Порт для HTTP: {PORT}")
             
-            # Администраторы уже инициализированы в конструкторе AccessControl
             logger.info(f"✅ Администраторы из .env загружены: {access_control.get_all_admins()}")
+            logger.info(f"✅ Администраторы автоматически получают доступ к курсу: {'ВКЛЮЧЕНО'}")
             
-            # Проверяем аудио файлы
             await check_audio_files()
             
-            # Проверяем файл чек-листа
             checklist_available = await check_checklist_file()
             
-            # Запускаем HTTP сервер
             http_runner = await start_http_server()
             
-            # Проверяем токен и подключаемся к Telegram
             try:
                 bot_info = await bot.get_me()
                 logger.info(f"✅ Бот запущен: @{bot_info.username} (ID: {bot_info.id})")
                 logger.info(f"✅ Система доступа: {len(access_control.get_all_admins())} администраторов, {len(access_control.get_all_paid_users())} оплативших")
-                logger.info(f"✅ Фиксированные кнопки: Автоматически адаптируются под статус пользователя")
+                logger.info(f"✅ Фиксированные кнопки: Администраторы получают полный доступ")
                 logger.info(f"✅ Аудио сопровождение: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} уроков")
                 logger.info(f"✅ HTTP сервер запущен на порту {PORT}")
             except Exception as e:
@@ -3462,7 +3381,6 @@ async def run_bot_with_retries():
                     await asyncio.sleep(restart_delay)
                 continue
             
-            # Запускаем поллинг
             try:
                 logger.info("🔄 Начинаем polling...")
                 await dp.start_polling(bot, skip_updates=True)
@@ -3495,7 +3413,6 @@ async def run_bot_with_retries():
     
     logger.info("🛑 Бот окончательно остановлен.")
     
-    # Закрываем сессию
     try:
         await bot.session.close()
         logger.info("✅ Сессия бота закрыта")
@@ -3509,11 +3426,9 @@ async def main():
     """
     global shutdown_flag
     
-    # Создаем задачу для запуска бота
     bot_task = asyncio.create_task(run_bot_with_retries())
     
     try:
-        # Ждем завершения задачи
         await bot_task
     except KeyboardInterrupt:
         logger.info("✅ Получен KeyboardInterrupt, инициируем shutdown...")
@@ -3523,7 +3438,6 @@ async def main():
         logger.error(f"❌ Необработанное исключение в main: {e}")
         logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
     finally:
-        # Гарантируем корректное завершение
         if not bot_task.done():
             bot_task.cancel()
             try:
@@ -3534,7 +3448,6 @@ async def main():
 # =========== ТОЧКА ВХОДА ===========
 if __name__ == "__main__":
     try:
-        # Выводим информацию о запуске
         print("=" * 60)
         print("🤖 Бот обучения тендерам с системой контроля доступа")
         print("=" * 60)
@@ -3550,13 +3463,12 @@ if __name__ == "__main__":
         print(f"📥 Чек-лист: {'Присутствует' if os.path.exists('Чек-лист -Первые 10 шагов в тендерах-.docx') else 'Отсутствует'}")
         print(f"🌐 HTTP порт: {PORT}")
         print("=" * 60)
-        print("🔐 Система администраторов:")
-        print("• Админы могут добавлять/удалять пользователей")
-        print("• Админы могут управлять другими админами")
-        print("• Доступ к курсу только после оплаты")
+        print("🔐 ВАЖНОЕ ИЗМЕНЕНИЕ В СИСТЕМЕ ДОСТУПА:")
+        print("• Администраторы автоматически получают доступ ко всему курсу")
+        print("• Метод is_paid_user возвращает True для администраторов")
+        print("• Администраторы видят все кнопки курса и админ-панель")
         print("=" * 60)
         
-        # Запускаем основную функцию
         asyncio.run(main())
         
     except KeyboardInterrupt:
