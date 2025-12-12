@@ -909,6 +909,9 @@ def get_after_test_keyboard() -> ReplyKeyboardMarkup:
 class AudioManager:
     """Менеджер для работы с аудиофайлами"""
     
+    def __init__(self, bot: Bot):
+        self.bot = bot
+    
     @staticmethod
     def get_audio_path(module_index: int) -> Optional[str]:
         """Получить путь к аудиофайлу модуля"""
@@ -942,9 +945,8 @@ class AudioManager:
             }
         return {}
     
-    @staticmethod
-    async def send_module_audio(chat_id: int, module_index: int) -> bool:
-        """Отправить аудио сопровождение для модуля"""
+    async def send_module_audio(self, chat_id: int, module_index: int, user_id: int) -> bool:
+        """Отправить аудио сопровождение для модуля с inline-кнопкой для отметки"""
         try:
             audio_path = AudioManager.get_audio_path(module_index)
             if not audio_path:
@@ -960,21 +962,44 @@ class AudioManager:
             caption += f"<b>{module['title']}</b>\n\n"
             caption += f"⏱ <b>Длительность:</b> {audio_info['duration']//60}:{audio_info['duration']%60:02d}\n"
             caption += f"📚 <b>Описание:</b> {audio_info['title']}\n\n"
+            
+            # Проверяем, пройден ли уже модуль
+            is_completed = False
+            if user_id in user_progress:
+                is_completed = (module_index + 1) in user_progress[user_id].get('completed_modules', [])
+            
+            if is_completed:
+                caption += "✅ <b>Этот модуль уже отмечен как пройденный</b>\n\n"
+            else:
+                caption += "🔘 <b>Нажмите кнопку ниже, чтобы отметить модуль как пройденный после прослушивания:</b>\n\n"
+            
             caption += "<i>Рекомендуем прослушать аудио для лучшего усвоения материала</i>"
             
-            await bot.send_audio(
+            # Создаем inline-клавиатуру с кнопкой
+            inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="✅ Отметить модуль как пройденный", 
+                    callback_data=f"mark_completed_{module_index}"
+                )]
+            ])
+            
+            await self.bot.send_audio(
                 chat_id=chat_id,
                 audio=audio_file,
                 caption=caption,
-                parse_mode=ParseMode.HTML
+                parse_mode=ParseMode.HTML,
+                reply_markup=inline_kb
             )
             
-            logger.info(f"Audio sent for module {module_index + 1} to chat {chat_id}")
+            logger.info(f"Audio sent for module {module_index + 1} to chat {chat_id} with inline button")
             return True
             
         except Exception as e:
             logger.error(f"Error sending audio for module {module_index}: {e}")
             return False
+
+# Инициализируем AudioManager
+audio_manager = AudioManager(bot)
 
 # =========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===========
 async def show_module(message: Message, module_index: int, state: FSMContext):
@@ -1007,6 +1032,7 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
     
     if not is_completed:
         module_text += "\n\n✅ <b>Не забудьте отметить модуль как пройденный после изучения!</b>"
+        module_text += "\n<i>После прослушивания аудио нажмите кнопку в аудио-сообщении выше</i>"
     
     await message.answer(
         module_text,
@@ -1014,7 +1040,7 @@ async def show_module(message: Message, module_index: int, state: FSMContext):
         parse_mode=ParseMode.HTML
     )
     
-    audio_sent = await AudioManager.send_module_audio(message.chat.id, module_index)
+    audio_sent = await audio_manager.send_module_audio(message.chat.id, module_index, user_id)
     
     if not audio_sent and module.get("has_audio", False):
         await message.answer(
@@ -1122,7 +1148,8 @@ async def send_final_summary(message: Message):
     if not access_control.is_paid_user(user_id):
         return
     
-    final_audio_sent = await AudioManager.send_module_audio(message.chat.id, 5)
+    # Отправляем аудио последнего модуля
+    final_audio_sent = await audio_manager.send_module_audio(message.chat.id, 5, user_id)
     
     course_summary = """<b>✅ Итоги курса:</b>
 
@@ -1287,6 +1314,121 @@ async def finish_test(message: Message, state: FSMContext):
     
     await state.clear()
 
+# =========== ОБРАБОТЧИКИ CALLBACK QUERY ===========
+@dp.callback_query(lambda c: c.data.startswith('mark_completed_'))
+async def handle_mark_completed_callback(callback_query: CallbackQuery, state: FSMContext):
+    """
+    Обрабатывает нажатие на кнопку "✅ Отметить модуль как пройденный" в аудио-сообщении
+    """
+    user_id = callback_query.from_user.id
+    
+    # Проверяем доступ
+    if not access_control.is_paid_user(user_id):
+        await callback_query.answer(
+            "❌ У вас нет доступа к курсу. Для получения доступа оплатите подписку.",
+            show_alert=True
+        )
+        return
+    
+    # Получаем номер модуля из callback_data
+    try:
+        module_index = int(callback_query.data.split('_')[-1])
+    except ValueError:
+        await callback_query.answer(
+            "❌ Ошибка при обработке запроса.",
+            show_alert=True
+        )
+        return
+    
+    # Проверяем валидность индекса модуля
+    if module_index < 0 or module_index >= len(MODULES):
+        await callback_query.answer(
+            "❌ Неверный номер модуля.",
+            show_alert=True
+        )
+        return
+    
+    # Инициализируем прогресс пользователя, если его нет
+    if user_id not in user_progress:
+        user_progress[user_id] = {
+            'start_date': datetime.now().isoformat(),
+            'completed_modules': [],
+            'last_module': module_index,
+            'name': callback_query.from_user.first_name,
+            'audio_listened': [],
+            'test_results': []
+        }
+    
+    module_num = module_index + 1
+    
+    # Проверяем, не пройден ли уже модуль
+    if module_num in user_progress[user_id]['completed_modules']:
+        await callback_query.answer(
+            "ℹ️ Этот модуль уже отмечен как пройденный!",
+            show_alert=True
+        )
+        return
+    
+    # Отмечаем модуль как пройденный
+    user_progress[user_id]['completed_modules'].append(module_num)
+    
+    # Добавляем аудио в прослушанные, если еще не было
+    if module_num not in user_progress[user_id].get('audio_listened', []):
+        user_progress[user_id].setdefault('audio_listened', []).append(module_num)
+    
+    # Обновляем последний модуль
+    user_progress[user_id]['last_module'] = module_index
+    
+    # Отвечаем пользователю
+    await callback_query.answer(
+        f"✅ Модуль {module_num} успешно отмечен как пройденный!",
+        show_alert=True
+    )
+    
+    # Обновляем сообщение с аудио, чтобы убрать кнопку или изменить текст
+    try:
+        # Получаем информацию о модуле
+        module = MODULES[module_index]
+        audio_info = AudioManager.get_audio_info(module_index)
+        
+        # Обновляем подпись аудио
+        updated_caption = f"🎧 <b>{module['emoji']} Аудио-сопровождение к модулю {module_index + 1}</b>\n"
+        updated_caption += f"<b>{module['title']}</b>\n\n"
+        updated_caption += f"⏱ <b>Длительность:</b> {audio_info['duration']//60}:{audio_info['duration']%60:02d}\n"
+        updated_caption += f"📚 <b>Описание:</b> {audio_info['title']}\n\n"
+        updated_caption += "✅ <b>Этот модуль отмечен как пройденный!</b>\n\n"
+        updated_caption += "<i>Вы можете прослушать аудио еще раз для повторения</i>"
+        
+        # Редактируем сообщение с аудио, убирая кнопку
+        await callback_query.message.edit_caption(
+            caption=updated_caption,
+            parse_mode=ParseMode.HTML,
+            reply_markup=None  # Убираем inline-клавиатуру
+        )
+        
+    except Exception as e:
+        logger.error(f"Error updating audio message: {e}")
+        # Если не удалось обновить сообщение, просто игнорируем
+    
+    # Проверяем, все ли модули пройдены
+    completed = len(user_progress[user_id]['completed_modules'])
+    total = len(MODULES)
+    
+    if completed == total:
+        # Все модули пройдены - предлагаем пройти тест
+        try:
+            await callback_query.message.answer(
+                "🎉 <b>Поздравляем! Вы завершили все модули курса!</b>\n\n"
+                "📝 <b>Теперь вы можете пройти финальный тест:</b>\n"
+                "1. Проверить свои знания\n"
+                "2. Получить оценку\n"
+                "3. Увидеть рекомендации по улучшению\n\n"
+                "Нажмите кнопку '📝 Пройти тест' в главном меню!",
+                parse_mode=ParseMode.HTML
+            )
+        except:
+            pass  # Игнорируем ошибку отправки сообщения
+
 # =========== КОМАНДЫ ===========
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -1335,7 +1477,7 @@ async def cmd_start(message: Message, state: FSMContext):
 • 📝 Пройти тест - проверка знаний
 • 👥 Управление доступом - админ-панель
 
-<b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение.
+<b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение <b>с кнопкой для отметки модуля как пройденного</b>.
 
 <b>Начните обучение или управление прямо сейчас!</b>
 """
@@ -1371,7 +1513,7 @@ async def cmd_start(message: Message, state: FSMContext):
 • 📊 Отслеживание прогресса
 • <b>📝 Финальный тест</b> для проверки знаний
 
-<b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение.
+<b>🎧 Важно!</b> При выборе урока автоматически отправляется аудио-сопровождение <b>с кнопкой для отметки модуля как пройденного</b>.
 
 <b>Используйте кнопки внизу для навигации!</b>
 """
@@ -2035,7 +2177,7 @@ async def handle_get_access(message: Message):
 
 💰 <b>Стоимость подписки:</b>
 • Полный доступ ко всем материалам
-• Аудио сопровождение к каждому уроку
+• Аудио сопровождение к каждому уроку с кнопкой для отметки
 • Проверка знаний через тест
 • Чек-лист для практической работы
 
@@ -2074,7 +2216,7 @@ async def handle_about_course(message: Message):
 
 📚 <b>Что вы получите:</b>
 • 6 модулей с теорией и практикой
-• Аудио сопровождение к каждому уроку
+• Аудио сопровождение к каждому уроку <b>с кнопкой для отметки пройденного</b>
 • Практические задания
 • Финальный тест для проверки знаний
 • Чек-лист для первых шагов
@@ -2165,7 +2307,7 @@ async def handle_audio_lessons(message: Message):
     if audio_list == "<b>🎧 Все аудио-уроки курса:</b>\n\n":
         audio_list += "❌ Аудио-уроки пока не добавлены"
     else:
-        audio_list += "<i>Аудио автоматически отправляется при выборе урока</i>"
+        audio_list += "<i>Аудио автоматически отправляется при выборе урока <b>с кнопкой для отметки пройденного</b></i>"
     
     await message.answer(
         audio_list,
@@ -2307,14 +2449,14 @@ async def handle_help(message: Message):
 <b>🆘 Справка по использованию бота:</b>
 
 <b>🎧 Аудио сопровождение:</b>
-• При выборе урока автоматически отправляется аудио-пояснение
+• При выборе урока автоматически отправляется аудио-пояснение <b>с кнопкой для отметки модуля как пройденного</b>
 • Для повторного прослушивания нажмите "🎧 Прослушать аудио"
 • Все аудио в формате MP3, совместимы с любыми устройствами
 
 <b>📚 Навигация по курсу:</b>
 • <b>📚 Меню курса</b> - список всех уроков
 • В уроке используйте кнопки "⬅️ Предыдущий урок" и "Следующий урок ➡️"
-• "✅ Отметить пройденным" - отмечайте пройденные уроки
+• <b>✅ Отметить пройденным в аудио-сообщении</b> - отмечайте пройденные уроки прямо в аудио
 • "🔙 Назад в главное меню" - возврат к основным кнопкам
 
 <b>📝 Финальный тест:</b>
@@ -2842,7 +2984,7 @@ async def handle_listen_audio(message: Message, state: FSMContext):
     current_module = data.get("current_module", 0)
     
     if current_module is not None:
-        audio_sent = await AudioManager.send_module_audio(message.chat.id, current_module)
+        audio_sent = await audio_manager.send_module_audio(message.chat.id, current_module, user_id)
         
         if audio_sent:
             if user_id in user_progress:
@@ -2867,7 +3009,7 @@ async def handle_listen_audio(message: Message, state: FSMContext):
 @dp.message(F.text == "✅ Отметить пройденным")
 async def handle_complete_lesson(message: Message, state: FSMContext):
     """
-    Отметка текущего урока как пройденного
+    Отметка текущего урока как пройденного (через reply-клавиатуру)
     """
     user_id = message.from_user.id
     
@@ -2896,8 +3038,10 @@ async def handle_complete_lesson(message: Message, state: FSMContext):
         if module_num not in user_progress[user_id]['completed_modules']:
             user_progress[user_id]['completed_modules'].append(module_num)
             await message.answer(
-                f"✅ Урок {module_num} отмечен как пройденный!",
-                reply_markup=get_lesson_navigation_keyboard(current_module, len(MODULES))
+                f"✅ Урок {module_num} отмечен как пройденный!\n\n"
+                "<i>Вы также можете отметить модуль как пройденный через кнопку в аудио-сообщении выше.</i>",
+                reply_markup=get_lesson_navigation_keyboard(current_module, len(MODULES)),
+                parse_mode=ParseMode.HTML
             )
             
             completed = len(user_progress[user_id]['completed_modules'])
@@ -3083,7 +3227,7 @@ async def cmd_audio(message: Message, command: CommandObject):
         module_num = int(command.args)
         if 1 <= module_num <= len(MODULES):
             module_index = module_num - 1
-            audio_sent = await AudioManager.send_module_audio(message.chat.id, module_index)
+            audio_sent = await audio_manager.send_module_audio(message.chat.id, module_index, user_id)
             
             if audio_sent:
                 if module_num not in user_progress[user_id].get('audio_listened', []):
@@ -3251,7 +3395,7 @@ async def handle_other_messages(message: Message, state: FSMContext):
                 "/audio - Аудио уроки\n"
                 "/test - Пройти финальный тест\n"
                 "/status - Статус бота\n\n"
-                "🎧 <b>Важно:</b> При выборе урока автоматически отправляется аудио-пояснение!\n"
+                "🎧 <b>Важно:</b> При выборе урока автоматически отправляется аудио-пояснение <b>с кнопкой для отметки пройденного!</b>\n"
                 "📝 <b>После завершения курса пройдите финальный тест!</b>\n"
                 "📥 <b>Скачайте готовый чек-лист для практической работы!</b>",
                 parse_mode=ParseMode.HTML,
@@ -3358,6 +3502,7 @@ async def run_bot_with_retries():
             
             logger.info(f"✅ Администраторы из .env загружены: {access_control.get_all_admins()}")
             logger.info(f"✅ Администраторы автоматически получают доступ к курсу: {'ВКЛЮЧЕНО'}")
+            logger.info(f"✅ Inline-кнопка для отметки модуля: {'ДОБАВЛЕНА В АУДИО'}")
             
             await check_audio_files()
             
@@ -3370,7 +3515,7 @@ async def run_bot_with_retries():
                 logger.info(f"✅ Бот запущен: @{bot_info.username} (ID: {bot_info.id})")
                 logger.info(f"✅ Система доступа: {len(access_control.get_all_admins())} администраторов, {len(access_control.get_all_paid_users())} оплативших")
                 logger.info(f"✅ Фиксированные кнопки: Администраторы получают полный доступ")
-                logger.info(f"✅ Аудио сопровождение: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} уроков")
+                logger.info(f"✅ Аудио сопровождение с кнопкой: {sum(1 for m in MODULES if m.get('has_audio'))}/{len(MODULES)} уроков")
                 logger.info(f"✅ HTTP сервер запущен на порту {PORT}")
             except Exception as e:
                 logger.error(f"❌ Не удалось подключиться к Telegram API: {e}")
@@ -3455,10 +3600,11 @@ if __name__ == "__main__":
         print(f"🔐 Система доступа: Включена")
         print(f"👑 Администраторов: {len(access_control.get_all_admins())}")
         print(f"👥 Пользователей с доступом: {len(access_control.get_all_paid_users())}")
+        print(f"🎯 Кнопка в аудио: ✅ Отметить модуль как пройденный")
         print(f"🔄 Максимальное количество перезапусков: {max_restarts}")
         print(f"⏱ Задержка между перезапусками: {restart_delay} сек")
         print(f"📚 Количество модулей: {len(MODULES)}")
-        print(f"🎧 Аудио файлов: {sum(1 for m in MODULES if m.get('has_audio'))}")
+        print(f"🎧 Аудио файлов с кнопкой: {sum(1 for m in MODULES if m.get('has_audio'))}")
         print(f"📝 Вопросов в тесте: {len(TEST_QUESTIONS)}")
         print(f"📥 Чек-лист: {'Присутствует' if os.path.exists('Чек-лист -Первые 10 шагов в тендерах-.docx') else 'Отсутствует'}")
         print(f"🌐 HTTP порт: {PORT}")
@@ -3467,6 +3613,7 @@ if __name__ == "__main__":
         print("• Администраторы автоматически получают доступ ко всему курсу")
         print("• Метод is_paid_user возвращает True для администраторов")
         print("• Администраторы видят все кнопки курса и админ-панель")
+        print("• Аудио-сообщения содержат inline-кнопку для отметки модуля")
         print("=" * 60)
         
         asyncio.run(main())
