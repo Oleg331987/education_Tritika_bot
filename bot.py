@@ -672,7 +672,8 @@ ADDITIONAL_MATERIALS = {
         "email": "info@tritika.ru",
         "phone": "+7(4922)223-222",
         "mobile": "+7-904-653-69-87",
-        "website": "https://tritika.ru"
+        "website": "https://tritika.ru",
+        "telegram": "@tritikaru"
     }
 }
 
@@ -921,6 +922,7 @@ class AudioManager:
             module = MODULES[module_index]
             audio_file = module.get("audio_file")
             if audio_file:
+                # Используем os.path.join для кроссплатформенности
                 audio_path = os.path.join(AUDIO_CONFIG["base_path"], audio_file)
                 if os.path.exists(audio_path):
                     return audio_path
@@ -1554,6 +1556,7 @@ async def cmd_start(message: Message, state: FSMContext):
 📞 <b>Контакты для оплаты:</b>
 Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}
 Email: {ADDITIONAL_MATERIALS['contacts']['email']}
+Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}
 
 <b>Нажмите "🔓 Получить доступ" для оплаты!</b>
 """
@@ -2244,7 +2247,7 @@ async def handle_get_access(message: Message):
 Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}
 Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}
-Телеграм: @tritikaru
+Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}
 
 <b>🆔 Ваш ID для связи: <code>{user_id}</code></b>
 
@@ -2297,6 +2300,10 @@ Email: {ADDITIONAL_MATERIALS['contacts']['email']}
             "<b>Счет:</b> 40702810012345678901\n"
             "<b>Корр. счет:</b> 30101810400000000225\n\n"
             "<b>Назначение платежа:</b> Оплата курса «Тендеры с нуля»\n\n"
+            "<b>Контакты для связи после оплаты:</b>\n"
+            f"Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}\n"
+            f"Email: {ADDITIONAL_MATERIALS['contacts']['email']}\n"
+            f"Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}\n\n"
             "✅ После оплаты отправьте скриншот чека в этот чат",
             parse_mode=ParseMode.HTML
         )
@@ -2351,7 +2358,8 @@ Email: {ADDITIONAL_MATERIALS['contacts']['email']}
             "Пожалуйста, свяжитесь с нами напрямую:\n"
             f"Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}\n"
             f"Email: {ADDITIONAL_MATERIALS['contacts']['email']}\n"
-            f"Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}\n\n"
+            f"Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}\n"
+            f"Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}\n\n"
             "Сообщите ваш ID для получения доступа:\n"
             f"<code>{user_id}</code>",
             parse_mode=ParseMode.HTML
@@ -2414,7 +2422,7 @@ async def handle_about_course(message: Message):
 Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}
 Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}
-Телеграм: @tritikaru
+Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}
 
 <b>🔓 Для получения доступа нажмите "🔓 Получить доступ"</b>
 """
@@ -2578,7 +2586,7 @@ async def handle_contacts(message: Message):
 📧 <b>Email:</b> {ADDITIONAL_MATERIALS['contacts']['email']}
 📱 <b>Телефон:</b> {ADDITIONAL_MATERIALS['contacts']['phone']}
 📲 <b>Мобильный:</b> {ADDITIONAL_MATERIALS['contacts']['mobile']}
-<b>Телеграм: @tritikaru</b>
+<b>Телеграм:</b> {ADDITIONAL_MATERIALS['contacts']['telegram']}
 
 🌐 <b>Сайт:</b> {ADDITIONAL_MATERIALS['contacts']['website']}
 📄 <b>Политика конфиденциальности:</b> https://tritika.ru/privacy
@@ -2616,8 +2624,8 @@ async def handle_useful_links(message: Message):
     links_text += f"📧 Email: {ADDITIONAL_MATERIALS['contacts']['email']}\n"
     links_text += f"📞 Телефон: {ADDITIONAL_MATERIALS['contacts']['phone']}\n"
     links_text += f"📲 Мобильный: {ADDITIONAL_MATERIALS['contacts']['mobile']}\n"
-    links_text += f"🌐 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}"
-    <b>Телеграм: @tritikaru</b>
+    links_text += f"🌐 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}\n"
+    links_text += f"📢 Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}"
     
     await message.answer(
         links_text,
@@ -2632,7 +2640,7 @@ async def handle_help(message: Message):
     Показывает справку
     """
     user_id = message.from_user.id
-    help_text = """
+    help_text = f"""
 <b>🆘 Справка по использованию бота:</b>
 
 <b>🎧 Аудио сопровождение:</b>
@@ -2676,10 +2684,10 @@ async def handle_help(message: Message):
 • Доступ активируется в течение 24 часов
 
 <b>📞 Контакты поддержки:</b>
-• Email: info@tritika.ru
-• Телефон: +7(4922)223-222
-• Сайт: https://tritika.ru
-• Телеграм: @tritikaru
+• Email: {ADDITIONAL_MATERIALS['contacts']['email']}
+• Телефон: {ADDITIONAL_MATERIALS['contacts']['phone']}
+• Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}
+• Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}
 
 <b>🕒 Часы работы поддержки:</b>
 Пн-Пт: 8:30-17:30 по МСК
@@ -3630,7 +3638,7 @@ async def handle_other_messages(message: Message, state: FSMContext):
 Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}
 Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}
-Телеграм: @tritikaru
+Телеграм: {ADDITIONAL_MATERIALS['contacts']['telegram']}
 
 <b>🆔 Ваш ID: <code>{user_id}</code></b>
 
@@ -3643,6 +3651,9 @@ Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 async def check_audio_files():
     """Проверяет наличие всех аудио файлов при запуске бота"""
     logger.info("Проверяем аудио файлы...")
+    
+    # Создаем директорию для аудио, если ее нет
+    os.makedirs(AUDIO_CONFIG["base_path"], exist_ok=True)
     
     missing_files = []
     
@@ -3746,7 +3757,7 @@ async def run_bot_with_retries():
             logger.info(f"✅ Администраторы автоматически получают доступ к курсу: ВКЛЮЧЕНО")
             logger.info(f"✅ Inline-кнопка для отметки модуля: ДОБАВЛЕНА В АУДИО")
             logger.info(f"✅ Стоимость курса по акции: 3 999 руб. вместо 5 000 руб.")
-            logger.info(f"✅ *Акция действует до 01.2026 г.")
+            logger.info(f"✅ *Акция действует до конца января 2026 года")
         
             await check_audio_files()
             await check_checklist_file()
@@ -3846,7 +3857,7 @@ if __name__ == "__main__":
         print(f"👑 Администраторов: {len(access_control.get_all_admins())}")
         print(f"👥 Пользователей с доступом: {len(access_control.get_all_paid_users())}")
         print(f"🎯 Кнопка в аудио: ✅ Отметить модуль как пройденный")
-        print(f"💰 Стоимость курса по акции: 3 999 руб. Акция до 01.2026 г.")
+        print(f"💰 Стоимость курса по акции: 3 999 руб. Акция до конца января 2026 г.")
         print(f"💰 Стоимость после акции: 5 000 руб.")
         print(f"📱 QR-код оплаты: {'✅ Присутствует' if os.path.exists('qr_code.png') else '❌ Отсутствует'}")
         print(f"🔄 Максимальное количество перезапусков: {max_restarts}")
@@ -3862,7 +3873,7 @@ if __name__ == "__main__":
         print("• Метод is_paid_user возвращает True для администраторов")
         print("• Администраторы видят все кнопки курса и админ-панель")
         print("• Аудио-сообщения содержат inline-кнопку для отметки модуля")
-        print("• QR-код для оплаты 3 999 руб. *Акция до 01.2026 г.")
+        print("• QR-код для оплаты 3 999 руб. *Акция до конца января 2026 г.")
         print("• После акции стоимость повысится до 5 000 руб.")
         print("• Согласие на обработку персональных данных при оплате")
         print("• Автоматическое уведомление администраторов о запросе доступа")
@@ -3882,8 +3893,3 @@ if __name__ == "__main__":
         logger.error(f"Критическая ошибка при запуске: {e}")
         logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
         sys.exit(1)
-
-
-
-
-
