@@ -3746,7 +3746,7 @@ async def run_bot_with_retries():
             logger.info(f"✅ Администраторы из .env загружены: {access_control.get_all_admins()}")
             logger.info(f"✅ Администраторы автоматически получают доступ к курсу: ВКЛЮЧЕНО")
             logger.info(f"✅ Inline-кнопка для отметки модуля: ДОБАВЛЕНА В АУДИО")
-            logger.info(f"✅ Стоимость курса по акции: 3 999 руб. вместо 5 000 руб.)
+            logger.info(f"✅ Стоимость курса по акции: 3 999 руб. вместо 5 000 руб.")
             logger.info(f"✅ *Акция действует до 01.2026 г.)
         
             await check_audio_files()
@@ -3883,4 +3883,5 @@ if __name__ == "__main__":
         logger.error(f"Критическая ошибка при запуске: {e}")
         logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
         sys.exit(1)
+
 
