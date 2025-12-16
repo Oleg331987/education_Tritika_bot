@@ -2199,10 +2199,7 @@ async def handle_get_access(message: Message):
     access_info = f"""
 <b>🔓 ПОЛУЧЕНИЕ ДОСТУПА К КУРСУ</b>
 
-✨ <b>🎁 АКЦИЯ:</b>
-
-<s>3 999 руб. вместо 5 000 руб.</s>
-
+✨ <b>🎁 АКЦИЯ: 3 999 руб. вместо </b><s>5 000 руб.</s>
 <b>*Акция действует до конца января 2026 года!</b>
 ---
 <b>📋 ЧТО ВХОДИТ В КУРС:</b>
@@ -2222,9 +2219,7 @@ async def handle_get_access(message: Message):
    • 📊 Автоматическое отслеживание прогресса
    • 🏆 Финальный тест с оценкой знаний
    • 📥 Готовый чек-лист
-
 ---
-
 <b>📝 СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ:</b>
 
 Нажимая кнопку "🔓 Получить доступ", вы подтверждаете, что:
@@ -2249,6 +2244,7 @@ async def handle_get_access(message: Message):
 Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}
 Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}
+Телеграм: @tritikaru
 
 <b>🆔 Ваш ID для связи: <code>{user_id}</code></b>
 
@@ -2412,13 +2408,13 @@ async def handle_about_course(message: Message):
 <s>Обычная цена: 7 500 руб.</s>
 
 ✨ <b>АКЦИОННАЯ ЦЕНА: 3 999 руб.</b>
-
 ⏰ <b>Акция действует до конца января 2026 года!</b>
 
 <b>📞 КОНТАКТЫ:</b>
 Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}
 Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}
+Телеграм: @tritikaru
 
 <b>🔓 Для получения доступа нажмите "🔓 Получить доступ"</b>
 """
@@ -2582,6 +2578,7 @@ async def handle_contacts(message: Message):
 📧 <b>Email:</b> {ADDITIONAL_MATERIALS['contacts']['email']}
 📱 <b>Телефон:</b> {ADDITIONAL_MATERIALS['contacts']['phone']}
 📲 <b>Мобильный:</b> {ADDITIONAL_MATERIALS['contacts']['mobile']}
+Телеграм: @tritikaru
 
 🌐 <b>Сайт:</b> {ADDITIONAL_MATERIALS['contacts']['website']}
 📄 <b>Политика конфиденциальности:</b> https://tritika.ru/privacy
@@ -2620,6 +2617,7 @@ async def handle_useful_links(message: Message):
     links_text += f"📞 Телефон: {ADDITIONAL_MATERIALS['contacts']['phone']}\n"
     links_text += f"📲 Мобильный: {ADDITIONAL_MATERIALS['contacts']['mobile']}\n"
     links_text += f"🌐 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}"
+    Телеграм: @tritikaru
     
     await message.answer(
         links_text,
@@ -2681,9 +2679,10 @@ async def handle_help(message: Message):
 • Email: info@tritika.ru
 • Телефон: +7(4922)223-222
 • Сайт: https://tritika.ru
+• Телеграм: @tritikaru
 
 <b>🕒 Часы работы поддержки:</b>
-Пн-Пт: 9:00-18:00 по МСК
+Пн-Пт: 8:30-17:30 по МСК
     """
     
     await message.answer(
@@ -3609,7 +3608,6 @@ async def handle_other_messages(message: Message, state: FSMContext):
                 f"""🔒 <b>У ВАС НЕТ ДОСТУПА К ПОЛНОМУ ФУНКЦИОНАЛУ БОТА</b>
 
 ✨ <b>🎁 АКЦИЯ! 3 999 руб. вместо 5 000 руб.</b>
-
 ⏰ <b>* действует до конца января 2026 года!</b>
 
 <b>📋 ЧТО ВХОДИТ В КУРС:</b>
@@ -3619,7 +3617,7 @@ async def handle_other_messages(message: Message, state: FSMContext):
 • Готовый чек-лист
 
 <b>🎧 УНИКАЛЬНАЯ ФУНКЦИЯ:</b>
-При выборе урока автоматически отправляется аудио-пояснение <b>с кнопкой для отметки модуля как пройденного</b> - как в этом сообщении!
+При выборе урока автоматически отправляется аудио-пояснение <b>с кнопкой для отметки модуля как пройденного</b>
 
 <b>📱 КАК ПОЛУЧИТЬ ДОСТУП:</b>
 1. Внизу экрана найдите кнопку <b>"🔓 Получить доступ"</b>
@@ -3632,6 +3630,7 @@ async def handle_other_messages(message: Message, state: FSMContext):
 Телефон: {ADDITIONAL_MATERIALS['contacts']['mobile']}
 Email: {ADDITIONAL_MATERIALS['contacts']['email']}
 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}
+Телеграм: @tritikaru
 
 <b>🆔 Ваш ID: <code>{user_id}</code></b>
 
@@ -3883,6 +3882,7 @@ if __name__ == "__main__":
         logger.error(f"Критическая ошибка при запуске: {e}")
         logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
         sys.exit(1)
+
 
 
 
