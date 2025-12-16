@@ -2578,7 +2578,7 @@ async def handle_contacts(message: Message):
 📧 <b>Email:</b> {ADDITIONAL_MATERIALS['contacts']['email']}
 📱 <b>Телефон:</b> {ADDITIONAL_MATERIALS['contacts']['phone']}
 📲 <b>Мобильный:</b> {ADDITIONAL_MATERIALS['contacts']['mobile']}
-Телеграм: @tritikaru
+<b>Телеграм: @tritikaru</b>
 
 🌐 <b>Сайт:</b> {ADDITIONAL_MATERIALS['contacts']['website']}
 📄 <b>Политика конфиденциальности:</b> https://tritika.ru/privacy
@@ -2617,7 +2617,7 @@ async def handle_useful_links(message: Message):
     links_text += f"📞 Телефон: {ADDITIONAL_MATERIALS['contacts']['phone']}\n"
     links_text += f"📲 Мобильный: {ADDITIONAL_MATERIALS['contacts']['mobile']}\n"
     links_text += f"🌐 Сайт: {ADDITIONAL_MATERIALS['contacts']['website']}"
-    Телеграм: @tritikaru
+    <b>Телеграм: @tritikaru</b>
     
     await message.answer(
         links_text,
@@ -3882,6 +3882,7 @@ if __name__ == "__main__":
         logger.error(f"Критическая ошибка при запуске: {e}")
         logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
         sys.exit(1)
+
 
 
 
