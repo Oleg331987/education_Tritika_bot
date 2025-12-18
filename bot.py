@@ -2638,7 +2638,7 @@ async def handle_contacts(message: Message):
 <b>Телеграм:</b> {ADDITIONAL_MATERIALS['contacts']['telegram']}
 
 🌐 <b>Сайт:</b> {ADDITIONAL_MATERIALS['contacts']['website']}
-📄 <b>Политика конфиденциальности:</b> https://tritika.ru/privacy
+📄 <b>Политика конфиденциальности:</b> https://tritika.ru/privacy-policy/
 
 <b>📅 Часы работы поддержки:</b>
 Пн-Пт: 8:30-17:30 по МСК
@@ -4034,3 +4034,4 @@ if __name__ == "__main__":
         logger.error(f"Критическая ошибка при запуске: {e}")
         logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
         sys.exit(1)
+
