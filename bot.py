@@ -4041,7 +4041,7 @@ if __name__ == "__main__":
         print(f"👥 Пользователей в системе: {len(user_progress)}")
         print(f"📚 Модулей в курсе: {len(MODULES)}")
         print(f"💰 Стоимость курса: 5 000 руб.")
-                print(f"🌐 HTTP порт: {PORT}")
+        print(f"🌐 HTTP порт: {PORT}")
         print("=" * 60)
         print("✅ Бот запускается...")
         print("📱 Проверьте бота командой /ping")
@@ -4058,4 +4058,5 @@ if __name__ == "__main__":
         logger.error(f"Критическая ошибка при запуске: {e}")
         logger.error(f"Трассировка ошибки: {traceback.format_exc()}")
         sys.exit(1)
+
 
